@@ -129,7 +129,7 @@ public class NormalRenderPipeline extends AbstractRenderPipeline {
 
     @Override
     public void setupAndBindOpaque(Viewport<?> viewport) {
-        this.fb.bind();
+        this.commandList.beginRenderPass(this.fb.framebuffer.id);
     }
 
     @Override
