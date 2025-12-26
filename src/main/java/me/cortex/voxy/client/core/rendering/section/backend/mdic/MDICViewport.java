@@ -1,18 +1,25 @@
 package me.cortex.voxy.client.core.rendering.section.backend.mdic;
 
-import me.cortex.voxy.client.core.gl.GlBuffer;
+import me.cortex.voxy.client.VoxyClient;
+import me.cortex.voxy.client.core.gpu.GpuBuffer;
+import me.cortex.voxy.client.core.gpu.GpuDevice;
 import me.cortex.voxy.client.core.rendering.Viewport;
 import me.cortex.voxy.client.core.rendering.hierachical.HierarchicalOcclusionTraverser;
 
 public class MDICViewport extends Viewport<MDICViewport> {
-    public final GlBuffer drawCountCallBuffer = new GlBuffer(1024).zero();
-    public final GlBuffer drawCallBuffer = new GlBuffer(5*4*(400_000+100_000+100_000)).zero();//400k draw calls
-    public final GlBuffer positionScratchBuffer  = new GlBuffer(8*400000).zero();//400k positions
-    public final GlBuffer indirectLookupBuffer = new GlBuffer(HierarchicalOcclusionTraverser.MAX_QUEUE_SIZE *4+4);//In theory, this could be global/not unique to the viewport
-    public final GlBuffer visibilityBuffer;
+    public final GpuBuffer drawCountCallBuffer;
+    public final GpuBuffer drawCallBuffer;
+    public final GpuBuffer positionScratchBuffer;
+    public final GpuBuffer indirectLookupBuffer;
+    public final GpuBuffer visibilityBuffer;
 
     public MDICViewport(int maxSectionCount) {
-        this.visibilityBuffer = new GlBuffer(maxSectionCount*4L);
+        GpuDevice device = VoxyClient.getBackend().device();
+        this.drawCountCallBuffer = device.createBuffer(new GpuDevice.BufferDescriptor(1024, "MDICDrawCount")).zero();
+        this.drawCallBuffer = device.createBuffer(new GpuDevice.BufferDescriptor(5L * 4 * (400_000 + 100_000 + 100_000), "MDICDrawCalls")).zero();
+        this.positionScratchBuffer = device.createBuffer(new GpuDevice.BufferDescriptor(8L * 400_000, "MDICPositionScratch")).zero();
+        this.indirectLookupBuffer = device.createBuffer(new GpuDevice.BufferDescriptor(HierarchicalOcclusionTraverser.MAX_QUEUE_SIZE * 4L + 4, "MDICIndirectLookup"));
+        this.visibilityBuffer = device.createBuffer(new GpuDevice.BufferDescriptor(maxSectionCount * 4L, "MDICVisibility"));
     }
 
     @Override
@@ -26,7 +33,7 @@ public class MDICViewport extends Viewport<MDICViewport> {
     }
 
     @Override
-    public GlBuffer getRenderList() {
+    public GpuBuffer getRenderList() {
         return this.indirectLookupBuffer;
     }
 }

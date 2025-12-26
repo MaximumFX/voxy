@@ -1,5 +1,10 @@
 package me.cortex.voxy.client.core.gpu;
 
+import me.cortex.voxy.client.core.gl.GlBuffer;
+import me.cortex.voxy.client.core.gl.GlFence;
+import me.cortex.voxy.client.core.gl.GlPersistentMappedBuffer;
+import me.cortex.voxy.client.core.gl.GlTexture;
+
 final class OpenGlGpuBackend implements GpuBackend {
     private final GpuDevice device = new OpenGlGpuDevice();
 
@@ -23,12 +28,21 @@ final class OpenGlGpuBackend implements GpuBackend {
     private static final class OpenGlGpuDevice implements GpuDevice {
         @Override
         public GpuBuffer createBuffer(BufferDescriptor descriptor) {
-            throw new UnsupportedOperationException("OpenGL buffer creation is not implemented yet");
+            GlBuffer buffer = new GlBuffer(descriptor.sizeBytes(), descriptor.flags(), descriptor.zeroed());
+            if (descriptor.label() != null) {
+                buffer.name(descriptor.label());
+            }
+            return buffer;
         }
 
         @Override
         public GpuTexture createTexture(TextureDescriptor descriptor) {
-            throw new UnsupportedOperationException("OpenGL texture creation is not implemented yet");
+            GlTexture texture = new GlTexture();
+            texture.store(descriptor.format(), descriptor.levels(), descriptor.width(), descriptor.height());
+            if (descriptor.label() != null) {
+                texture.name(descriptor.label());
+            }
+            return texture;
         }
 
         @Override
@@ -53,12 +67,21 @@ final class OpenGlGpuBackend implements GpuBackend {
 
         @Override
         public GpuFence createFence() {
-            throw new UnsupportedOperationException("OpenGL fence creation is not implemented yet");
+            return new GlFence();
         }
 
         @Override
         public GpuQueryPool createQueryPool(QueryPoolDescriptor descriptor) {
             throw new UnsupportedOperationException("OpenGL query pool creation is not implemented yet");
+        }
+
+        @Override
+        public GpuBuffer createMappedBuffer(MappedBufferDescriptor descriptor) {
+            GlPersistentMappedBuffer buffer = new GlPersistentMappedBuffer(descriptor.sizeBytes(), descriptor.mapFlags());
+            if (descriptor.label() != null) {
+                buffer.name(descriptor.label());
+            }
+            return buffer;
         }
     }
 

@@ -1,7 +1,9 @@
 package me.cortex.voxy.client.core.rendering.util;
 
+import me.cortex.voxy.client.VoxyClient;
 import me.cortex.voxy.client.core.gl.GlFramebuffer;
-import me.cortex.voxy.client.core.gl.GlTexture;
+import me.cortex.voxy.client.core.gpu.GpuDevice;
+import me.cortex.voxy.client.core.gpu.GpuTexture;
 import me.cortex.voxy.client.core.gl.GlVertexArray;
 import me.cortex.voxy.client.core.gl.shader.Shader;
 import me.cortex.voxy.client.core.gl.shader.ShaderType;
@@ -28,7 +30,7 @@ public class HiZBuffer {
     private final GlFramebuffer fb = new GlFramebuffer().name("HiZ");
     private final int sampler = glGenSamplers();
     private final int type;
-    private GlTexture texture;
+    private GpuTexture texture;
     private int levels;
     private int width;
     private int height;
@@ -48,12 +50,13 @@ public class HiZBuffer {
         // (could probably increase it to be defined by a max meshlet coverage computation thing)
 
         //GL_DEPTH_COMPONENT32F //Cant use this as it does not match the depth format of the provided depth buffer
-        this.texture = new GlTexture().store(this.type, this.levels, width, height).name("HiZ");
-        glTextureParameteri(this.texture.id, GL_TEXTURE_MIN_FILTER, GL_NEAREST_MIPMAP_NEAREST);
-        glTextureParameteri(this.texture.id, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-        glTextureParameteri(this.texture.id, GL_TEXTURE_COMPARE_MODE, GL_NONE);
-        glTextureParameteri(this.texture.id, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-        glTextureParameteri(this.texture.id, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+        GpuDevice device = VoxyClient.getBackend().device();
+        this.texture = device.createTexture(new GpuDevice.TextureDescriptor(this.type, this.levels, width, height, "HiZ"));
+        glTextureParameteri(this.texture.id(), GL_TEXTURE_MIN_FILTER, GL_NEAREST_MIPMAP_NEAREST);
+        glTextureParameteri(this.texture.id(), GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+        glTextureParameteri(this.texture.id(), GL_TEXTURE_COMPARE_MODE, GL_NONE);
+        glTextureParameteri(this.texture.id(), GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+        glTextureParameteri(this.texture.id(), GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
 
         glSamplerParameteri(this.sampler, GL_TEXTURE_MIN_FILTER, GL_NEAREST_MIPMAP_NEAREST);
         glSamplerParameteri(this.sampler, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
@@ -96,14 +99,14 @@ public class HiZBuffer {
             glDrawArrays(GL_TRIANGLE_FAN, 0, 4);
             glTextureBarrier();
             glMemoryBarrier(GL_FRAMEBUFFER_BARRIER_BIT|GL_TEXTURE_FETCH_BARRIER_BIT);
-            glTextureParameteri(this.texture.id, GL_TEXTURE_BASE_LEVEL, i);
-            glTextureParameteri(this.texture.id, GL_TEXTURE_MAX_LEVEL, i);
+            glTextureParameteri(this.texture.id(), GL_TEXTURE_BASE_LEVEL, i);
+            glTextureParameteri(this.texture.id(), GL_TEXTURE_MAX_LEVEL, i);
             if (i==0) {
-                glBindTextureUnit(0, this.texture.id);
+                glBindTextureUnit(0, this.texture.id());
             }
         }
-        glTextureParameteri(this.texture.id, GL_TEXTURE_BASE_LEVEL, 0);
-        glTextureParameteri(this.texture.id, GL_TEXTURE_MAX_LEVEL, 1000);//TODO: CHECK IF ITS -1 or -0
+        glTextureParameteri(this.texture.id(), GL_TEXTURE_BASE_LEVEL, 0);
+        glTextureParameteri(this.texture.id(), GL_TEXTURE_MAX_LEVEL, 1000);//TODO: CHECK IF ITS -1 or -0
 
         glDepthFunc(GL_LEQUAL);
         glDisable(GL_DEPTH_TEST);
@@ -123,7 +126,7 @@ public class HiZBuffer {
     }
 
     public int getHizTextureId() {
-        return this.texture.id;
+        return this.texture.id();
     }
 
     public int getPackedLevels() {

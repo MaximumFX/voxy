@@ -1,7 +1,9 @@
 package me.cortex.voxy.client.core.model;
 
-import me.cortex.voxy.client.core.gl.GlBuffer;
-import me.cortex.voxy.client.core.gl.GlTexture;
+import me.cortex.voxy.client.VoxyClient;
+import me.cortex.voxy.client.core.gpu.GpuBuffer;
+import me.cortex.voxy.client.core.gpu.GpuDevice;
+import me.cortex.voxy.client.core.gpu.GpuTexture;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.renderer.texture.TextureAtlas;
 import net.minecraft.resources.Identifier;
@@ -19,15 +21,22 @@ import static org.lwjgl.opengl.GL45.glBindTextureUnit;
 
 public class ModelStore {
     public static final int MODEL_SIZE = 64;
-    final GlBuffer modelBuffer;
-    final GlBuffer modelColourBuffer;
-    final GlTexture textures;
+    final GpuBuffer modelBuffer;
+    final GpuBuffer modelColourBuffer;
+    final GpuTexture textures;
     public final int blockSampler = glGenSamplers();
 
     public ModelStore() {
-        this.modelBuffer = new GlBuffer(MODEL_SIZE * (1<<16)).name("ModelData");
-        this.modelColourBuffer = new GlBuffer(4 * (1<<16)).name("ModelColour");
-        this.textures = new GlTexture().store(GL_RGBA8, Integer.numberOfTrailingZeros(ModelFactory.MODEL_TEXTURE_SIZE), ModelFactory.MODEL_TEXTURE_SIZE*3*256,ModelFactory.MODEL_TEXTURE_SIZE*2*256).name("ModelTextures");
+        GpuDevice device = VoxyClient.getBackend().device();
+        this.modelBuffer = device.createBuffer(new GpuDevice.BufferDescriptor(MODEL_SIZE * (1<<16), "ModelData"));
+        this.modelColourBuffer = device.createBuffer(new GpuDevice.BufferDescriptor(4 * (1<<16), "ModelColour"));
+        this.textures = device.createTexture(new GpuDevice.TextureDescriptor(
+                GL_RGBA8,
+                Integer.numberOfTrailingZeros(ModelFactory.MODEL_TEXTURE_SIZE),
+                ModelFactory.MODEL_TEXTURE_SIZE * 3 * 256,
+                ModelFactory.MODEL_TEXTURE_SIZE * 2 * 256,
+                "ModelTextures"
+        ));
 
 
         //Limit the mips of the texture to match that of the terrain atlas
@@ -51,9 +60,9 @@ public class ModelStore {
 
 
     public void bind(int modelBindingIndex, int colourBindingIndex, int textureBindingIndex) {
-        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, modelBindingIndex, this.modelBuffer.id);
-        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, colourBindingIndex, this.modelColourBuffer.id);
-        glBindTextureUnit(textureBindingIndex, this.textures.id);
+        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, modelBindingIndex, this.modelBuffer.id());
+        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, colourBindingIndex, this.modelColourBuffer.id());
+        glBindTextureUnit(textureBindingIndex, this.textures.id());
         glBindSampler(textureBindingIndex, this.blockSampler);
     }
 }

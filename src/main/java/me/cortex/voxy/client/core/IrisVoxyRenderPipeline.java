@@ -1,6 +1,8 @@
 package me.cortex.voxy.client.core;
 
-import me.cortex.voxy.client.core.gl.GlBuffer;
+import me.cortex.voxy.client.VoxyClient;
+import me.cortex.voxy.client.core.gpu.GpuBuffer;
+import me.cortex.voxy.client.core.gpu.GpuDevice;
 import me.cortex.voxy.client.core.model.ModelBakerySubsystem;
 import me.cortex.voxy.client.core.rendering.Viewport;
 import me.cortex.voxy.client.core.rendering.hierachical.AsyncNodeManager;
@@ -28,7 +30,7 @@ public class IrisVoxyRenderPipeline extends AbstractRenderPipeline {
     private final FullscreenBlit depthBlit = new FullscreenBlit("voxy:post/blit_texture_depth_cutout.frag");
     public final DepthFramebuffer fbTranslucent = new DepthFramebuffer(this.fb.getFormat());
 
-    private final GlBuffer shaderUniforms;
+    private final GpuBuffer shaderUniforms;
 
     public IrisVoxyRenderPipeline(IrisVoxyRenderPipelineData data, AsyncNodeManager nodeManager, NodeCleaner nodeCleaner, HierarchicalOcclusionTraverser traversal, BooleanSupplier frexSupplier) {
         super(nodeManager, nodeCleaner, traversal, frexSupplier, data.shouldDeferTranslucency());
@@ -59,7 +61,8 @@ public class IrisVoxyRenderPipeline extends AbstractRenderPipeline {
         this.fbTranslucent.framebuffer.verify();
 
         if (data.getUniforms() != null) {
-            this.shaderUniforms = new GlBuffer(data.getUniforms().size());
+            GpuDevice device = VoxyClient.getBackend().device();
+            this.shaderUniforms = device.createBuffer(new GpuDevice.BufferDescriptor(data.getUniforms().size(), "IrisUniforms"));
         } else {
             this.shaderUniforms = null;
         }
@@ -116,7 +119,7 @@ public class IrisVoxyRenderPipeline extends AbstractRenderPipeline {
             srcHeight = viewport.height;
         }
         this.initDepthStencil(sourceFramebuffer, this.fb.framebuffer.id, srcWidth, srcHeight, viewport.width, viewport.height);
-        return this.fb.getDepthTex().id;
+        return this.fb.getDepthTex().id();
     }
 
     @Override
@@ -139,7 +142,7 @@ public class IrisVoxyRenderPipeline extends AbstractRenderPipeline {
         if (this.data.renderToVanillaDepth && srcWidth == viewport.width  && srcHeight == viewport.height) {//We can only depthblit out if destination size is the same
             glColorMask(false, false, false, false);
             AbstractRenderPipeline.transformBlitDepth(this.depthBlit,
-                    this.fbTranslucent.getDepthTex().id, sourceFrameBuffer,
+                    this.fbTranslucent.getDepthTex().id(), sourceFrameBuffer,
                     viewport, new Matrix4f(viewport.vanillaProjection).mul(viewport.modelView));
             glColorMask(true, true, true, true);
         } else {
@@ -158,7 +161,7 @@ public class IrisVoxyRenderPipeline extends AbstractRenderPipeline {
     @Override
     public void bindUniforms(int bindingPoint) {
         if (this.shaderUniforms != null) {
-            GL30.glBindBufferBase(GL_UNIFORM_BUFFER, bindingPoint, this.shaderUniforms.id);// todo: dont randomly select this to 5
+            GL30.glBindBufferBase(GL_UNIFORM_BUFFER, bindingPoint, this.shaderUniforms.id());// todo: dont randomly select this to 5
         }
     }
 

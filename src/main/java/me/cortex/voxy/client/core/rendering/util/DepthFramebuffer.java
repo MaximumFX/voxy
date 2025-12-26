@@ -1,7 +1,9 @@
 package me.cortex.voxy.client.core.rendering.util;
 
+import me.cortex.voxy.client.VoxyClient;
 import me.cortex.voxy.client.core.gl.GlFramebuffer;
-import me.cortex.voxy.client.core.gl.GlTexture;
+import me.cortex.voxy.client.core.gpu.GpuDevice;
+import me.cortex.voxy.client.core.gpu.GpuTexture;
 import org.lwjgl.system.MemoryStack;
 
 import static org.lwjgl.opengl.ARBDirectStateAccess.nglClearNamedFramebufferfv;
@@ -11,7 +13,7 @@ import static org.lwjgl.opengl.GL30C.*;
 
 public class DepthFramebuffer {
     private final int depthType;
-    private GlTexture depthBuffer;
+    private GpuTexture depthBuffer;
     public final GlFramebuffer framebuffer = new GlFramebuffer();
 
     public DepthFramebuffer() {
@@ -27,7 +29,8 @@ public class DepthFramebuffer {
             if (this.depthBuffer != null) {
                 this.depthBuffer.free();
             }
-            this.depthBuffer = new GlTexture().store(this.depthType, 1, width, height);
+            GpuDevice device = VoxyClient.getBackend().device();
+            this.depthBuffer = device.createTexture(new GpuDevice.TextureDescriptor(this.depthType, 1, width, height, "DepthFramebuffer"));
             this.framebuffer.bind(this.getDepthAttachmentType(), this.depthBuffer).verify();
             return true;
         }
@@ -48,7 +51,7 @@ public class DepthFramebuffer {
         }
     }
 
-    public GlTexture getDepthTex() {
+    public GpuTexture getDepthTex() {
         return this.depthBuffer;
     }
 

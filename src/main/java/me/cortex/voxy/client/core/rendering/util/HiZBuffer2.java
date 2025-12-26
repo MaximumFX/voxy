@@ -1,7 +1,9 @@
 package me.cortex.voxy.client.core.rendering.util;
 
+import me.cortex.voxy.client.VoxyClient;
 import me.cortex.voxy.client.core.gl.GlFramebuffer;
-import me.cortex.voxy.client.core.gl.GlTexture;
+import me.cortex.voxy.client.core.gpu.GpuDevice;
+import me.cortex.voxy.client.core.gpu.GpuTexture;
 import me.cortex.voxy.client.core.gl.GlVertexArray;
 import me.cortex.voxy.client.core.gl.shader.Shader;
 import me.cortex.voxy.client.core.gl.shader.ShaderType;
@@ -31,7 +33,7 @@ public class HiZBuffer2 {
     private final GlFramebuffer fb = new GlFramebuffer().name("HiZ");
     private final int sampler = glGenSamplers();
     private final int type;
-    private GlTexture texture;
+    private GpuTexture texture;
     private int levels;
     private int width;
     private int height;
@@ -51,12 +53,13 @@ public class HiZBuffer2 {
         // (could probably increase it to be defined by a max meshlet coverage computation thing)
 
         //GL_DEPTH_COMPONENT32F //Cant use this as it does not match the depth format of the provided depth buffer
-        this.texture = new GlTexture().store(this.type, this.levels, width, height).name("HiZ");
-        glTextureParameteri(this.texture.id, GL_TEXTURE_MIN_FILTER, GL_NEAREST_MIPMAP_NEAREST);
-        glTextureParameteri(this.texture.id, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-        glTextureParameteri(this.texture.id, GL_TEXTURE_COMPARE_MODE, GL_NONE);
-        glTextureParameteri(this.texture.id, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-        glTextureParameteri(this.texture.id, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+        GpuDevice device = VoxyClient.getBackend().device();
+        this.texture = device.createTexture(new GpuDevice.TextureDescriptor(this.type, this.levels, width, height, "HiZ"));
+        glTextureParameteri(this.texture.id(), GL_TEXTURE_MIN_FILTER, GL_NEAREST_MIPMAP_NEAREST);
+        glTextureParameteri(this.texture.id(), GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+        glTextureParameteri(this.texture.id(), GL_TEXTURE_COMPARE_MODE, GL_NONE);
+        glTextureParameteri(this.texture.id(), GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+        glTextureParameteri(this.texture.id(), GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
 
         glSamplerParameteri(this.sampler, GL_TEXTURE_MIN_FILTER, GL_NEAREST_MIPMAP_NEAREST);
         glSamplerParameteri(this.sampler, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
@@ -110,10 +113,10 @@ public class HiZBuffer2 {
             this.hizMip.bind();
 
             glUniform2f(0, 1f/this.width, 1f/this.height);
-            glBindTextureUnit(0, this.texture.id);
+            glBindTextureUnit(0, this.texture.id());
             glBindSampler(0, this.sampler);
             for (int i = 1; i < 7; i++) {
-                glBindImageTexture(i, this.texture.id, i, false, 0, GL_WRITE_ONLY, GL_R32F);
+                glBindImageTexture(i, this.texture.id(), i, false, 0, GL_WRITE_ONLY, GL_R32F);
             }
 
             glDispatchCompute(this.width/64, this.height/64, 1);
@@ -139,7 +142,7 @@ public class HiZBuffer2 {
     }
 
     public int getHizTextureId() {
-        return this.texture.id;
+        return this.texture.id();
     }
 
     public int getPackedLevels() {

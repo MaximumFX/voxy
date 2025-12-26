@@ -1,5 +1,6 @@
 package me.cortex.voxy.client.core.gl;
 
+import me.cortex.voxy.client.core.gpu.GpuTexture;
 import me.cortex.voxy.common.util.TrackedObject;
 
 import static org.lwjgl.opengl.GL45C.*;
@@ -11,12 +12,12 @@ public class GlFramebuffer extends TrackedObject {
         this.id = glCreateFramebuffers();
     }
 
-    public GlFramebuffer bind(int attachment, GlTexture texture) {
+    public GlFramebuffer bind(int attachment, GpuTexture texture) {
         return this.bind(attachment, texture, 0);
     }
 
-    public GlFramebuffer bind(int attachment, GlTexture texture, int lvl) {
-        glNamedFramebufferTexture(this.id, attachment, texture.id, lvl);
+    public GlFramebuffer bind(int attachment, GpuTexture texture, int lvl) {
+        glNamedFramebufferTexture(this.id, attachment, texture.id(), lvl);
         return this;
     }
 

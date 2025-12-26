@@ -3,7 +3,9 @@ package me.cortex.voxy.client.core.util;
 import it.unimi.dsi.fastutil.ints.IntArrayFIFOQueue;
 import it.unimi.dsi.fastutil.objects.ObjectArrayFIFOQueue;
 import it.unimi.dsi.fastutil.objects.ObjectArrayList;
-import me.cortex.voxy.client.core.gl.GlBuffer;
+import me.cortex.voxy.client.VoxyClient;
+import me.cortex.voxy.client.core.gpu.GpuBuffer;
+import me.cortex.voxy.client.core.gpu.GpuDevice;
 import me.cortex.voxy.client.core.rendering.util.DownloadStream;
 import me.cortex.voxy.common.util.MemoryBuffer;
 import me.cortex.voxy.common.util.Pair;
@@ -149,11 +151,12 @@ public class GPUTiming {
     /*
     private static final class GlTimestampQuerySet extends TrackedObject {
         private final int query = glGenQueries();
-        public final GlBuffer store;
+        public final GpuBuffer store;
         public final int[] metadata;
         public int index;
         public GlTimestampQuerySet(int maxCount) {
-            this.store = new GlBuffer(maxCount*8L);
+            GpuDevice device = VoxyClient.getBackend().device();
+            this.store = device.createBuffer(new GpuDevice.BufferDescriptor(maxCount * 8L, "GpuTimingStore"));
             this.metadata = new int[maxCount];
         }
 
@@ -165,7 +168,7 @@ public class GPUTiming {
             this.metadata[slot] = metadata;
             glQueryCounter(this.query, GL_TIMESTAMP);//This should be gpu side, so should be fast
             glFinish();
-            glGetQueryBufferObjectui64v(this.query, this.store.id, GL_QUERY_RESULT_NO_WAIT, slot*8L);
+            glGetQueryBufferObjectui64v(this.query, this.store.id(), GL_QUERY_RESULT_NO_WAIT, slot*8L);
             glMemoryBarrier(-1);
         }
 

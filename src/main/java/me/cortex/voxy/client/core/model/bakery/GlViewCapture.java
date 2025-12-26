@@ -1,7 +1,9 @@
 package me.cortex.voxy.client.core.model.bakery;
 
+import me.cortex.voxy.client.VoxyClient;
 import me.cortex.voxy.client.core.gl.GlFramebuffer;
-import me.cortex.voxy.client.core.gl.GlTexture;
+import me.cortex.voxy.client.core.gpu.GpuDevice;
+import me.cortex.voxy.client.core.gpu.GpuTexture;
 import me.cortex.voxy.client.core.gl.shader.Shader;
 import me.cortex.voxy.client.core.gl.shader.ShaderType;
 import org.lwjgl.system.MemoryStack;
@@ -21,33 +23,34 @@ import static org.lwjgl.opengl.GL45.glClearNamedFramebufferfi;
 public class GlViewCapture {
     private final int width;
     private final int height;
-    private final GlTexture colourTex;
-    private final GlTexture depthTex;
-    private final GlTexture stencilTex;
-    private final GlTexture metaTex;
+    private final GpuTexture colourTex;
+    private final GpuTexture depthTex;
+    private final GpuTexture stencilTex;
+    private final GpuTexture metaTex;
     final GlFramebuffer framebuffer;
     private final Shader copyOutShader;
 
     public GlViewCapture(int width, int height) {
         this.width = width;
         this.height = height;
-        this.metaTex = new GlTexture().store(GL_R32UI, 1, width*3, height*2).name("ModelBakeryMetadata");
-        this.colourTex = new GlTexture().store(GL_RGBA8, 1, width*3, height*2).name("ModelBakeryColour");
-        this.depthTex = new GlTexture().store(GL_DEPTH24_STENCIL8, 1, width*3, height*2).name("ModelBakeryDepth");
+        GpuDevice device = VoxyClient.getBackend().device();
+        this.metaTex = device.createTexture(new GpuDevice.TextureDescriptor(GL_R32UI, 1, width * 3, height * 2, "ModelBakeryMetadata"));
+        this.colourTex = device.createTexture(new GpuDevice.TextureDescriptor(GL_RGBA8, 1, width * 3, height * 2, "ModelBakeryColour"));
+        this.depthTex = device.createTexture(new GpuDevice.TextureDescriptor(GL_DEPTH24_STENCIL8, 1, width * 3, height * 2, "ModelBakeryDepth"));
         //TODO: FIXME: Mesa is broken when trying to read from a sampler of GL_STENCIL_INDEX
         // it seems to just ignore the value set in GL_DEPTH_STENCIL_TEXTURE_MODE
-        glTextureParameteri(this.depthTex.id, GL_DEPTH_STENCIL_TEXTURE_MODE, GL_STENCIL_INDEX);
+        glTextureParameteri(this.depthTex.id(), GL_DEPTH_STENCIL_TEXTURE_MODE, GL_STENCIL_INDEX);
         this.stencilTex = this.depthTex.createView();
-        glTextureParameteri(this.depthTex.id, GL_DEPTH_STENCIL_TEXTURE_MODE, GL_DEPTH_COMPONENT);
+        glTextureParameteri(this.depthTex.id(), GL_DEPTH_STENCIL_TEXTURE_MODE, GL_DEPTH_COMPONENT);
 
         this.framebuffer = new GlFramebuffer().bind(GL_COLOR_ATTACHMENT0, this.colourTex).bind(GL_COLOR_ATTACHMENT1, this.metaTex).setDrawBuffers(GL_COLOR_ATTACHMENT0,GL_COLOR_ATTACHMENT1).bind(GL_DEPTH_STENCIL_ATTACHMENT, this.depthTex).verify().name("ModelFramebuffer");
 
-        glTextureParameteri(this.stencilTex.id, GL_DEPTH_STENCIL_TEXTURE_MODE, GL_STENCIL_INDEX);
-        glTextureParameteri(this.stencilTex.id, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-        glTextureParameteri(this.stencilTex.id, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+        glTextureParameteri(this.stencilTex.id(), GL_DEPTH_STENCIL_TEXTURE_MODE, GL_STENCIL_INDEX);
+        glTextureParameteri(this.stencilTex.id(), GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+        glTextureParameteri(this.stencilTex.id(), GL_TEXTURE_MIN_FILTER, GL_NEAREST);
 
-        glTextureParameteri(this.metaTex.id, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-        glTextureParameteri(this.metaTex.id, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+        glTextureParameteri(this.metaTex.id(), GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+        glTextureParameteri(this.metaTex.id(), GL_TEXTURE_MIN_FILTER, GL_NEAREST);
 
         this.copyOutShader = Shader.makeAuto()
                 .define("WIDTH", width)

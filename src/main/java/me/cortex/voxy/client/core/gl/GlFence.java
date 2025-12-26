@@ -1,11 +1,12 @@
 package me.cortex.voxy.client.core.gl;
 
+import me.cortex.voxy.client.core.gpu.GpuFence;
 import me.cortex.voxy.common.util.TrackedObject;
 import org.lwjgl.system.MemoryUtil;
 
 import static org.lwjgl.opengl.GL32.*;
 
-public class GlFence extends TrackedObject {
+public class GlFence extends TrackedObject implements GpuFence {
     private final long fence;
     private boolean signaled;
 
@@ -15,6 +16,7 @@ public class GlFence extends TrackedObject {
 
     private static final long SCRATCH = MemoryUtil.nmemCalloc(1,4);
 
+    @Override
     public boolean signaled() {
         if (!this.signaled) {
             /*
@@ -40,5 +42,10 @@ public class GlFence extends TrackedObject {
     public void free() {
         super.free0();
         glDeleteSync(this.fence);
+    }
+
+    @Override
+    public void close() {
+        this.free();
     }
 }

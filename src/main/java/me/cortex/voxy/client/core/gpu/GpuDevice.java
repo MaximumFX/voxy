@@ -4,9 +4,25 @@ package me.cortex.voxy.client.core.gpu;
  * Device-level interface for immutable resource creation.
  */
 public interface GpuDevice {
-    record BufferDescriptor(long sizeBytes, String label) {}
+    record BufferDescriptor(long sizeBytes, String label, int flags, boolean zeroed) {
+        public BufferDescriptor(long sizeBytes, String label) {
+            this(sizeBytes, label, 0, true);
+        }
 
-    record TextureDescriptor(int width, int height, int depth, String label) {}
+        public BufferDescriptor(long sizeBytes, String label, int flags) {
+            this(sizeBytes, label, flags, true);
+        }
+
+        public BufferDescriptor(long sizeBytes, String label, boolean zeroed) {
+            this(sizeBytes, label, 0, zeroed);
+        }
+    }
+
+    record TextureDescriptor(int format, int levels, int width, int height, int depth, String label) {
+        public TextureDescriptor(int format, int levels, int width, int height, String label) {
+            this(format, levels, width, height, 1, label);
+        }
+    }
 
     record SamplerDescriptor(String label) {}
 
@@ -17,6 +33,12 @@ public interface GpuDevice {
     record PipelineDescriptor(String label) {}
 
     record QueryPoolDescriptor(int queryCount, String label) {}
+
+    record MappedBufferDescriptor(long sizeBytes, int mapFlags, String label) {
+        public MappedBufferDescriptor(long sizeBytes, int mapFlags) {
+            this(sizeBytes, mapFlags, null);
+        }
+    }
 
     GpuBuffer createBuffer(BufferDescriptor descriptor);
 
@@ -33,4 +55,6 @@ public interface GpuDevice {
     GpuFence createFence();
 
     GpuQueryPool createQueryPool(QueryPoolDescriptor descriptor);
+
+    GpuBuffer createMappedBuffer(MappedBufferDescriptor descriptor);
 }

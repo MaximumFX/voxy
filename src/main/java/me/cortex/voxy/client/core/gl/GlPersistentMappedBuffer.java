@@ -1,12 +1,13 @@
 package me.cortex.voxy.client.core.gl;
 
+import me.cortex.voxy.client.core.gpu.GpuBuffer;
 import me.cortex.voxy.common.util.TrackedObject;
 
 import static org.lwjgl.opengl.ARBMapBufferRange.GL_MAP_WRITE_BIT;
 import static org.lwjgl.opengl.GL15.glDeleteBuffers;
 import static org.lwjgl.opengl.GL45C.*;
 
-public class GlPersistentMappedBuffer extends TrackedObject {
+public class GlPersistentMappedBuffer extends TrackedObject implements GpuBuffer {
     public final int id;
     private final long size;
     private final long addr;
@@ -24,15 +25,52 @@ public class GlPersistentMappedBuffer extends TrackedObject {
         glDeleteBuffers(this.id);
     }
 
+    @Override
+    public int id() {
+        return this.id;
+    }
+
+    @Override
     public long size() {
         return this.size;
+    }
+
+    @Override
+    public boolean isSparse() {
+        return false;
+    }
+
+    @Override
+    public GlPersistentMappedBuffer zero() {
+        throw new UnsupportedOperationException("Persistent mapped buffers do not support zero()");
+    }
+
+    @Override
+    public GlPersistentMappedBuffer zeroRange(long offset, long size) {
+        throw new UnsupportedOperationException("Persistent mapped buffers do not support zeroRange()");
+    }
+
+    @Override
+    public GlPersistentMappedBuffer fill(int data) {
+        throw new UnsupportedOperationException("Persistent mapped buffers do not support fill()");
     }
 
     public long addr() {
         return this.addr;
     }
 
+    @Override
+    public long mappedAddress() {
+        return this.addr;
+    }
+
+    @Override
     public GlPersistentMappedBuffer name(String name) {
         return GlDebug.name(name, this);
+    }
+
+    @Override
+    public void close() {
+        this.free();
     }
 }

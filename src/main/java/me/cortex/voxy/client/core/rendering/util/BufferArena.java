@@ -1,7 +1,9 @@
 package me.cortex.voxy.client.core.rendering.util;
 
+import me.cortex.voxy.client.VoxyClient;
 import me.cortex.voxy.client.core.gl.Capabilities;
-import me.cortex.voxy.client.core.gl.GlBuffer;
+import me.cortex.voxy.client.core.gpu.GpuBuffer;
+import me.cortex.voxy.client.core.gpu.GpuDevice;
 import me.cortex.voxy.common.util.AllocationArena;
 import me.cortex.voxy.common.util.MemoryBuffer;
 import me.cortex.voxy.common.util.UnsafeUtil;
@@ -14,7 +16,7 @@ public class BufferArena {
 
     private final long size;
     private final int elementSize;
-    private final GlBuffer buffer;
+    private final GpuBuffer buffer;
     private final AllocationArena allocationMap = new AllocationArena();
     private long used;
 
@@ -30,7 +32,8 @@ public class BufferArena {
         }
         this.size = capacity;
         this.elementSize = elementSize;
-        this.buffer = new GlBuffer(capacity);
+        GpuDevice device = VoxyClient.getBackend().device();
+        this.buffer = device.createBuffer(new GpuDevice.BufferDescriptor(capacity, "BufferArena"));
         this.allocationMap.setLimit(capacity/elementSize);
     }
 
@@ -58,8 +61,7 @@ public class BufferArena {
     }
 
     public int id() {
-        this.buffer.assertNotFreed();
-        return this.buffer.id;
+        return this.buffer.id();
     }
 
     public float usage() {

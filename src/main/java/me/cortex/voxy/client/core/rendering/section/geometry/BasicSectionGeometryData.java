@@ -1,7 +1,9 @@
 package me.cortex.voxy.client.core.rendering.section.geometry;
 
+import me.cortex.voxy.client.VoxyClient;
 import me.cortex.voxy.client.core.gl.Capabilities;
-import me.cortex.voxy.client.core.gl.GlBuffer;
+import me.cortex.voxy.client.core.gpu.GpuBuffer;
+import me.cortex.voxy.client.core.gpu.GpuDevice;
 import me.cortex.voxy.common.Logger;
 import me.cortex.voxy.common.util.ThreadUtils;
 
@@ -12,15 +14,16 @@ import static org.lwjgl.opengl.GL15C.glBindBuffer;
 
 public class BasicSectionGeometryData implements IGeometryData {
     public static final int SECTION_METADATA_SIZE = 32;
-    private final GlBuffer sectionMetadataBuffer;
-    private final GlBuffer geometryBuffer;
+    private final GpuBuffer sectionMetadataBuffer;
+    private final GpuBuffer geometryBuffer;
 
     private final int maxSectionCount;
     private int currentSectionCount;
 
     public BasicSectionGeometryData(int maxSectionCount, long geometryCapacity) {
         this.maxSectionCount = maxSectionCount;
-        this.sectionMetadataBuffer = new GlBuffer((long) maxSectionCount * SECTION_METADATA_SIZE);
+        GpuDevice device = VoxyClient.getBackend().device();
+        this.sectionMetadataBuffer = device.createBuffer(new GpuDevice.BufferDescriptor((long) maxSectionCount * SECTION_METADATA_SIZE, "SectionMetadata"));
         //8 Cause a quad is 8 bytes
         if ((geometryCapacity%8)!=0) {
             throw new IllegalStateException();
@@ -33,9 +36,9 @@ public class BasicSectionGeometryData implements IGeometryData {
         Logger.info(msg);
         Logger.info("if your game crashes/exits here without any other log message, try manually decreasing the geometry capacity");
         glGetError();//Clear any errors
-        GlBuffer buffer = null;
+        GpuBuffer buffer = null;
         if (!(Capabilities.INSTANCE.isNvidia)) {// && ThreadUtils.isWindows
-            buffer = new GlBuffer(geometryCapacity, false);//Only do this if we are not on nvidia
+            buffer = device.createBuffer(new GpuDevice.BufferDescriptor(geometryCapacity, "GeometryBuffer", false));//Only do this if we are not on nvidia
             //TODO: FIXME: TEST, see if the issue is that we are trying to zero the entire buffer, try only zeroing increments
             // or dont zero it at all
         } else {
@@ -48,7 +51,7 @@ public class BasicSectionGeometryData implements IGeometryData {
                     Logger.error("Failed to allocate geometry buffer, attempting workaround with sparse buffers");
                     buffer.free();
                 }
-                buffer = new GlBuffer(geometryCapacity, GL_SPARSE_STORAGE_BIT_ARB);
+                buffer = device.createBuffer(new GpuDevice.BufferDescriptor(geometryCapacity, "GeometryBufferSparse", GL_SPARSE_STORAGE_BIT_ARB));
                 //buffer.zero();
                 error = glGetError();
                 if (error != GL_NO_ERROR) {
@@ -70,7 +73,7 @@ public class BasicSectionGeometryData implements IGeometryData {
         //If we are a sparse buffer, ensure the memory upto the requested size is allocated
         if (this.geometryBuffer.isSparse()) {
             if (this.sparseCommitment < size) {//if we try to access memory outside the allocation range, allocate it
-                glBindBuffer(GL_ARRAY_BUFFER, this.geometryBuffer.id);
+                glBindBuffer(GL_ARRAY_BUFFER, this.geometryBuffer.id());
                 size += 65536L*1024;//increase size by 64mb to prevent driver allocation thrashing
                 glBufferPageCommitmentARB(GL_ARRAY_BUFFER, this.sparseCommitment, size-this.sparseCommitment, true);
                 glBindBuffer(GL_ARRAY_BUFFER, 0);
@@ -79,11 +82,11 @@ public class BasicSectionGeometryData implements IGeometryData {
         }
     }
 
-    public GlBuffer getGeometryBuffer() {
+    public GpuBuffer getGeometryBuffer() {
         return this.geometryBuffer;
     }
 
-    public GlBuffer getMetadataBuffer() {
+    public GpuBuffer getMetadataBuffer() {
         return this.sectionMetadataBuffer;
     }
 
@@ -113,7 +116,7 @@ public class BasicSectionGeometryData implements IGeometryData {
             gpuMemory = Capabilities.INSTANCE.getFreeDedicatedGpuMemory();
         }
         if (this.geometryBuffer.isSparse()) {
-            glBindBuffer(GL_ARRAY_BUFFER, this.geometryBuffer.id);
+            glBindBuffer(GL_ARRAY_BUFFER, this.geometryBuffer.id());
             glBufferPageCommitmentARB(GL_ARRAY_BUFFER, 0, this.sparseCommitment, false);
             glBindBuffer(GL_ARRAY_BUFFER, 0);
         }

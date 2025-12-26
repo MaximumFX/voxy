@@ -1,7 +1,9 @@
 package me.cortex.voxy.client.core.rendering.hierachical;
 
 import it.unimi.dsi.fastutil.ints.IntOpenHashSet;
-import me.cortex.voxy.client.core.gl.GlBuffer;
+import me.cortex.voxy.client.VoxyClient;
+import me.cortex.voxy.client.core.gpu.GpuBuffer;
+import me.cortex.voxy.client.core.gpu.GpuDevice;
 import me.cortex.voxy.client.core.gl.shader.AutoBindingShader;
 import me.cortex.voxy.client.core.gl.shader.Shader;
 import me.cortex.voxy.client.core.gl.shader.ShaderType;
@@ -58,8 +60,8 @@ public class NodeCleaner {
             .compile();
 
 
-    final GlBuffer visibilityBuffer;
-    private final GlBuffer outputBuffer = new GlBuffer(OUTPUT_COUNT*4+OUTPUT_COUNT*8);//Scratch + output
+    final GpuBuffer visibilityBuffer;
+    private final GpuBuffer outputBuffer;//Scratch + output
 
     private final AsyncNodeManager nodeManager;
     int visibilityId = 0;
@@ -67,8 +69,10 @@ public class NodeCleaner {
 
     public NodeCleaner(AsyncNodeManager nodeManager) {
         this.nodeManager = nodeManager;
-        this.visibilityBuffer = new GlBuffer(nodeManager.maxNodeCount*4L).zero();
+        GpuDevice device = VoxyClient.getBackend().device();
+        this.visibilityBuffer = device.createBuffer(new GpuDevice.BufferDescriptor(nodeManager.maxNodeCount * 4L, "NodeVisibility")).zero();
         this.visibilityBuffer.fill(-1);
+        this.outputBuffer = device.createBuffer(new GpuDevice.BufferDescriptor(OUTPUT_COUNT * 4L + OUTPUT_COUNT * 8L, "NodeCleanerOutput"));
 
         this.batchClear
                 .ssbo("VISIBILITY_BUFFER_BINDING", this.visibilityBuffer);
@@ -101,13 +105,13 @@ public class NodeCleaner {
     }
 
 
-    public void tick(GlBuffer nodeDataBuffer) {
+    public void tick(GpuBuffer nodeDataBuffer) {
         this.visibilityId++;
         if (this.shouldCleanGeometry()) {
             this.outputBuffer.fill(this.nodeManager.maxNodeCount - 2);//TODO: maybe dont set to zero??
 
             this.sorter.bind();
-            glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 3, nodeDataBuffer.id);
+            glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 3, nodeDataBuffer.id());
 
             //TODO: choose whether this is in nodeSpace or section/geometryId space
             //
@@ -116,10 +120,10 @@ public class NodeCleaner {
             glDispatchCompute((this.nodeManager.getCurrentMaxNodeId() + (SORTING_WORKER_SIZE*WORK_PER_THREAD) - 1) / (SORTING_WORKER_SIZE*WORK_PER_THREAD), 1, 1);
 
             this.resultTransformer.bind();
-            glBindBufferRange(GL_SHADER_STORAGE_BUFFER, 0, this.outputBuffer.id, 0, 4 * OUTPUT_COUNT);
-            glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, nodeDataBuffer.id);
-            glBindBufferRange(GL_SHADER_STORAGE_BUFFER, 2, this.outputBuffer.id, 4 * OUTPUT_COUNT, 8 * OUTPUT_COUNT);
-            glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 3, this.visibilityBuffer.id);
+            glBindBufferRange(GL_SHADER_STORAGE_BUFFER, 0, this.outputBuffer.id(), 0, 4 * OUTPUT_COUNT);
+            glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, nodeDataBuffer.id());
+            glBindBufferRange(GL_SHADER_STORAGE_BUFFER, 2, this.outputBuffer.id(), 4 * OUTPUT_COUNT, 8 * OUTPUT_COUNT);
+            glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 3, this.visibilityBuffer.id());
             glUniform1ui(0, this.visibilityId);
 
             glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
@@ -168,7 +172,7 @@ public class NodeCleaner {
 
     private void dumpDebugData() {
         int[] outData = new int[OUTPUT_COUNT*3];
-        ARBDirectStateAccess.glGetNamedBufferSubData(this.outputBuffer.id, 0, outData);
+        ARBDirectStateAccess.glGetNamedBufferSubData(this.outputBuffer.id(), 0, outData);
         for(int i =0;i < OUTPUT_COUNT; i++) {
             System.out.println(outData[i]);
         }
@@ -178,7 +182,7 @@ public class NodeCleaner {
             System.out.println(data[i*2+OUTPUT_COUNT]+", "+data[i*2+OUTPUT_COUNT+1]);
         }*/
         int[] visData = new int[(int) (this.visibilityBuffer.size()/4)];
-        ARBDirectStateAccess.glGetNamedBufferSubData(this.visibilityBuffer.id, 0, visData);
+        ARBDirectStateAccess.glGetNamedBufferSubData(this.visibilityBuffer.id(), 0, visData);
         int a = 0;
     }
 

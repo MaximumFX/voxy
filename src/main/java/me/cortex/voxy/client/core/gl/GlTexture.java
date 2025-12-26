@@ -1,5 +1,6 @@
 package me.cortex.voxy.client.core.gl;
 
+import me.cortex.voxy.client.core.gpu.GpuTexture;
 import me.cortex.voxy.common.util.TrackedObject;
 
 import static org.lwjgl.opengl.GL11.GL_RGBA8;
@@ -7,7 +8,7 @@ import static org.lwjgl.opengl.GL11C.*;
 import static org.lwjgl.opengl.GL30.GL_DEPTH24_STENCIL8;
 import static org.lwjgl.opengl.GL45C.*;
 
-public class GlTexture extends TrackedObject {
+public class GlTexture extends TrackedObject implements GpuTexture {
     public final int id;
     private final int type;
     private int format;
@@ -39,6 +40,7 @@ public class GlTexture extends TrackedObject {
         COUNT++;
     }
 
+    @Override
     public GlTexture store(int format, int levels, int width, int height) {
         if (this.hasAllocated) {
             throw new IllegalStateException("Texture already allocated");
@@ -58,6 +60,7 @@ public class GlTexture extends TrackedObject {
         return this;
     }
 
+    @Override
     public GlTexture createView() {
         this.assertAllocated();
         var view = new GlTexture(this.type, true);
@@ -76,26 +79,36 @@ public class GlTexture extends TrackedObject {
         glDeleteTextures(this.id);
     }
 
+    @Override
     public GlTexture name(String name) {
         this.assertAllocated();
         return GlDebug.name(name, this);
     }
 
+    @Override
+    public int id() {
+        return this.id;
+    }
+
+    @Override
     public int getWidth() {
         this.assertAllocated();
         return this.width;
     }
 
+    @Override
     public int getHeight() {
         this.assertAllocated();
         return this.height;
     }
 
+    @Override
     public int getLevels() {
         this.assertAllocated();
         return this.levels;
     }
 
+    @Override
     public int getFormat() {
         this.assertAllocated();
         return this.format;
@@ -132,5 +145,10 @@ public class GlTexture extends TrackedObject {
 
     public static long getEstimatedTotalSize() {
         return ESTIMATED_TOTAL_SIZE;
+    }
+
+    @Override
+    public void close() {
+        this.free();
     }
 }

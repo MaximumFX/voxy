@@ -1,5 +1,6 @@
 package me.cortex.voxy.client.core.gl;
 
+import me.cortex.voxy.client.core.gpu.GpuBuffer;
 import me.cortex.voxy.common.util.TrackedObject;
 import org.lwjgl.opengl.GL11;
 import org.lwjgl.system.MemoryUtil;
@@ -9,7 +10,7 @@ import static org.lwjgl.opengl.GL11.GL_UNSIGNED_BYTE;
 import static org.lwjgl.opengl.GL15.glDeleteBuffers;
 import static org.lwjgl.opengl.GL45C.*;
 
-public class GlBuffer extends TrackedObject {
+public class GlBuffer extends TrackedObject implements GpuBuffer {
     public final int id;
     private final long size;
     private final int flags;
@@ -54,20 +55,29 @@ public class GlBuffer extends TrackedObject {
         return (this.flags&GL_SPARSE_STORAGE_BIT_ARB)!=0;
     }
 
+    @Override
+    public int id() {
+        return this.id;
+    }
+
+    @Override
     public long size() {
         return this.size;
     }
 
+    @Override
     public GlBuffer zero() {
         nglClearNamedBufferData(this.id, GL_R8UI, GL_RED_INTEGER, GL_UNSIGNED_BYTE, 0);
         return this;
     }
 
+    @Override
     public GlBuffer zeroRange(long offset, long size) {
         nglClearNamedBufferSubData(this.id, GL_R8UI, offset, size, GL_RED_INTEGER, GL_UNSIGNED_BYTE, 0);
         return this;
     }
 
+    @Override
     public GlBuffer fill(int data) {
         //Clear unpack values
         //Fixed in mesa commit a5c3c452
@@ -89,6 +99,11 @@ public class GlBuffer extends TrackedObject {
 
     public GlBuffer name(String name) {
         return GlDebug.name(name, this);
+    }
+
+    @Override
+    public void close() {
+        this.free();
     }
 
     private static final long SCRATCH = MemoryUtil.nmemAlloc(4);

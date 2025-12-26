@@ -1,8 +1,10 @@
 package me.cortex.voxy.client.core.rendering.util;
 
 
-import me.cortex.voxy.client.core.gl.GlFence;
-import me.cortex.voxy.client.core.gl.GlPersistentMappedBuffer;
+import me.cortex.voxy.client.VoxyClient;
+import me.cortex.voxy.client.core.gpu.GpuBuffer;
+import me.cortex.voxy.client.core.gpu.GpuDevice;
+import me.cortex.voxy.client.core.gpu.GpuFence;
 import me.cortex.voxy.common.Logger;
 import me.cortex.voxy.common.util.AllocationArena;
 
@@ -19,15 +21,16 @@ public class RawDownloadStream {
     //NOTE: after the callback returns the pointer is no longer valid for client use
     public interface IDownloadCompletedCallback{void accept(long ptr);}
     private record DownloadFragment(int allocation, IDownloadCompletedCallback callback){}
-    private record DownloadFrame(GlFence fence, DownloadFragment[] fragments) {}
+    private record DownloadFrame(GpuFence fence, DownloadFragment[] fragments) {}
 
-    private final GlPersistentMappedBuffer downloadBuffer;
+    private final GpuBuffer downloadBuffer;
     private final AllocationArena allocationArena = new AllocationArena();
     private final ArrayList<DownloadFragment> frameFragments = new ArrayList<>();
     private final Deque<DownloadFrame> frames = new ArrayDeque<>();
 
     public RawDownloadStream(int size) {
-        this.downloadBuffer = new GlPersistentMappedBuffer(size, GL_MAP_READ_BIT|GL_MAP_COHERENT_BIT).name("RawDownloadStream");
+        GpuDevice device = VoxyClient.getBackend().device();
+        this.downloadBuffer = device.createMappedBuffer(new GpuDevice.MappedBufferDescriptor(size, GL_MAP_READ_BIT | GL_MAP_COHERENT_BIT, "RawDownloadStream"));
         this.allocationArena.setLimit(size);
     }
 
@@ -53,7 +56,7 @@ public class RawDownloadStream {
         if (!this.frameFragments.isEmpty()) {
             var fragments = this.frameFragments.toArray(new DownloadFragment[0]);
             this.frameFragments.clear();
-            this.frames.add(new DownloadFrame(new GlFence(), fragments));
+            this.frames.add(new DownloadFrame(VoxyClient.getBackend().device().createFence(), fragments));
         }
     }
 
@@ -67,7 +70,7 @@ public class RawDownloadStream {
             }
             var frame = this.frames.poll();
             for (var fragment : frame.fragments) {
-                long addr = this.downloadBuffer.addr() + fragment.allocation;
+                long addr = this.downloadBuffer.mappedAddress() + fragment.allocation;
                 fragment.callback.accept(addr);
                 this.allocationArena.free(fragment.allocation);
             }
@@ -76,13 +79,13 @@ public class RawDownloadStream {
     }
 
     public int getBufferId() {
-        return this.downloadBuffer.id;
+        return this.downloadBuffer.id();
     }
 
     public void free() {
         glFinish();
         this.tick();
-        GlFence fence = new GlFence();
+        GpuFence fence = VoxyClient.getBackend().device().createFence();
         while (!fence.signaled()) {
             glFinish();
         }
