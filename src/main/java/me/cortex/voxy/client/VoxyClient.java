@@ -3,8 +3,11 @@ package me.cortex.voxy.client;
 import me.cortex.voxy.client.core.IGetVoxyRenderSystem;
 import me.cortex.voxy.client.core.VoxyRenderSystem;
 import me.cortex.voxy.client.core.gl.Capabilities;
+import me.cortex.voxy.client.core.gpu.GpuBackend;
+import me.cortex.voxy.client.core.gpu.GpuBackendProvider;
 import me.cortex.voxy.client.core.model.bakery.BudgetBufferRenderer;
 import me.cortex.voxy.client.core.rendering.util.SharedIndexBuffer;
+import me.cortex.voxy.client.config.VoxyConfig;
 import me.cortex.voxy.common.Logger;
 import me.cortex.voxy.commonImpl.VoxyCommon;
 import net.fabricmc.api.ClientModInitializer;
@@ -26,9 +29,11 @@ import java.util.function.Function;
 
 public class VoxyClient implements ClientModInitializer {
     private static final HashSet<String> FREX = new HashSet<>();
+    private static GpuBackend backend;
 
     public static void initVoxyClient() {
         Capabilities.init();//Ensure clinit is called
+        backend = GpuBackendProvider.create(VoxyConfig.CONFIG.gpuBackend);
 
         if (Capabilities.INSTANCE.hasBrokenDepthSampler) {
             Logger.error("AMD broken depth sampler detected, voxy does not work correctly and has been disabled, this will hopefully be fixed in the future");
@@ -100,5 +105,9 @@ public class VoxyClient implements ClientModInitializer {
 
     public static boolean disableSodiumChunkRender() {
         return false;// getOcclusionDebugState() != 0;
+    }
+
+    public static GpuBackend getBackend() {
+        return backend;
     }
 }

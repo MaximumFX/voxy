@@ -4,6 +4,7 @@ import com.google.gson.FieldNamingPolicy;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import me.cortex.voxy.common.Logger;
+import me.cortex.voxy.common.config.GpuBackendConfig;
 import me.cortex.voxy.common.util.cpu.CpuLayout;
 import me.cortex.voxy.commonImpl.VoxyCommon;
 import net.fabricmc.loader.api.FabricLoader;
@@ -31,6 +32,7 @@ public class VoxyConfig {
     public float subDivisionSize = 64;
     public boolean useEnvironmentalFog = true;
     public boolean dontUseSodiumBuilderThreads = false;
+    public GpuBackendConfig gpuBackend = new GpuBackendConfig();
 
     private static VoxyConfig loadOrCreate() {
         if (VoxyCommon.isAvailable()) {
