@@ -38,9 +38,16 @@ public interface GpuCommandList {
 
     void setColorMask(boolean red, boolean green, boolean blue, boolean alpha);
 
+    void clearColor(float red, float green, float blue, float alpha);
+
+    void clear(int mask);
+
     void enable(int cap);
 
     void disable(int cap);
+
+    void blitNamedFramebuffer(int srcFramebuffer, int dstFramebuffer, int srcX0, int srcY0, int srcX1, int srcY1,
+                              int dstX0, int dstY0, int dstX1, int dstY1, int mask, int filter);
 
     void blendFuncSeparate(int srcRgb, int dstRgb, int srcAlpha, int dstAlpha);
 
