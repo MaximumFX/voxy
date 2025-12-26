@@ -4,7 +4,14 @@ import me.cortex.voxy.client.core.gl.GlBuffer;
 import me.cortex.voxy.client.core.gl.GlFence;
 import me.cortex.voxy.client.core.gl.GlPersistentMappedBuffer;
 import me.cortex.voxy.client.core.gl.GlTexture;
+import org.lwjgl.system.MemoryStack;
+import org.lwjgl.system.MemoryUtil;
 
+import java.util.ArrayList;
+import java.util.List;
+
+import static org.lwjgl.opengl.GL11C.glClear;
+import static org.lwjgl.opengl.GL11C.glClearColor;
 import static org.lwjgl.opengl.GL11C.glEnable;
 import static org.lwjgl.opengl.GL11C.glDisable;
 import static org.lwjgl.opengl.GL11C.glDepthFunc;
@@ -22,6 +29,7 @@ import static org.lwjgl.opengl.GL42C.glDrawElementsInstancedBaseVertexBaseInstan
 import static org.lwjgl.opengl.GL43.glBindImageTexture;
 import static org.lwjgl.opengl.GL45.glClearNamedFramebufferfi;
 import static org.lwjgl.opengl.GL45.glGetNamedFramebufferAttachmentParameteri;
+import static org.lwjgl.opengl.GL45C.glBlitNamedFramebuffer;
 import static org.lwjgl.opengl.GL45C.glBindTextureUnit;
 import static org.lwjgl.opengl.GL45C.glTextureParameterf;
 import static org.lwjgl.opengl.GL45C.nglUniformMatrix4fv;
@@ -46,6 +54,9 @@ final class OpenGlGpuBackend implements GpuBackend {
     public void submit(GpuCommandList commandList, GpuFence fence) {
         if (fence != null) {
             throw new UnsupportedOperationException("OpenGL backend fence signaling is not implemented yet");
+        }
+        if (commandList instanceof OpenGlGpuCommandList glCommandList) {
+            glCommandList.execute();
         }
     }
 
@@ -110,8 +121,11 @@ final class OpenGlGpuBackend implements GpuBackend {
     }
 
     private static final class OpenGlGpuCommandList implements GpuCommandList {
+        private final List<Runnable> commands = new ArrayList<>();
+
         @Override
         public void begin() {
+            this.commands.clear();
         }
 
         @Override
@@ -120,7 +134,7 @@ final class OpenGlGpuBackend implements GpuBackend {
 
         @Override
         public void beginRenderPass(int framebufferId) {
-            glBindFramebuffer(GL_FRAMEBUFFER, framebufferId);
+            this.commands.add(() -> glBindFramebuffer(GL_FRAMEBUFFER, framebufferId));
         }
 
         @Override
@@ -133,104 +147,132 @@ final class OpenGlGpuBackend implements GpuBackend {
 
         @Override
         public void bindDescriptors(int firstUnit, int... textureIds) {
-            for (int i = 0; i < textureIds.length; i++) {
-                glBindTextureUnit(firstUnit + i, textureIds[i]);
-            }
+            int[] textures = textureIds.clone();
+            this.commands.add(() -> {
+                for (int i = 0; i < textures.length; i++) {
+                    glBindTextureUnit(firstUnit + i, textures[i]);
+                }
+            });
         }
 
         @Override
         public void bindImageTexture(int unit, int textureId, int level, boolean layered, int layer, int access, int format) {
-            glBindImageTexture(unit, textureId, level, layered, layer, access, format);
+            this.commands.add(() -> glBindImageTexture(unit, textureId, level, layered, layer, access, format));
         }
 
         @Override
         public void bindSampler(int unit, int samplerId) {
-            glBindSampler(unit, samplerId);
+            this.commands.add(() -> glBindSampler(unit, samplerId));
         }
 
         @Override
         public void draw(int mode, int vertexCount, int instanceCount, int firstVertex, int firstInstance) {
-            glDrawArraysInstancedBaseInstance(mode, firstVertex, vertexCount, instanceCount, firstInstance);
+            this.commands.add(() -> glDrawArraysInstancedBaseInstance(mode, firstVertex, vertexCount, instanceCount, firstInstance));
         }
 
         @Override
         public void drawIndexed(int mode, int indexCount, int indexType, long indicesOffset, int instanceCount, int baseVertex, int baseInstance) {
-            glDrawElementsInstancedBaseVertexBaseInstance(mode, indexCount, indexType, indicesOffset, instanceCount, baseVertex, baseInstance);
+            this.commands.add(() -> glDrawElementsInstancedBaseVertexBaseInstance(mode, indexCount, indexType, indicesOffset, instanceCount, baseVertex, baseInstance));
         }
 
         @Override
         public void dispatchCompute(int groupCountX, int groupCountY, int groupCountZ) {
-            glDispatchCompute(groupCountX, groupCountY, groupCountZ);
+            this.commands.add(() -> glDispatchCompute(groupCountX, groupCountY, groupCountZ));
         }
 
         @Override
         public void bufferBarrier(int barriers) {
-            glMemoryBarrier(barriers);
+            this.commands.add(() -> glMemoryBarrier(barriers));
         }
 
         @Override
         public void imageBarrier(int barriers) {
-            glMemoryBarrier(barriers);
+            this.commands.add(() -> glMemoryBarrier(barriers));
         }
 
         @Override
         public void setUniformMatrix4fv(int location, int count, boolean transpose, long value) {
-            nglUniformMatrix4fv(location, count, transpose, value);
+            float[] data = new float[count * 16];
+            MemoryUtil.memFloatBuffer(value, data.length).get(data);
+            this.commands.add(() -> {
+                try (MemoryStack stack = MemoryStack.stackPush()) {
+                    var buffer = stack.mallocFloat(data.length);
+                    buffer.put(data).flip();
+                    nglUniformMatrix4fv(location, count, transpose, MemoryUtil.memAddress(buffer));
+                }
+            });
         }
 
         @Override
         public void setUniform4f(int location, float v0, float v1, float v2, float v3) {
-            glUniform4f(location, v0, v1, v2, v3);
+            this.commands.add(() -> glUniform4f(location, v0, v1, v2, v3));
         }
 
         @Override
         public void setUniform2f(int location, float v0, float v1) {
-            glUniform2f(location, v0, v1);
+            this.commands.add(() -> glUniform2f(location, v0, v1));
         }
 
         @Override
         public void setColorMask(boolean red, boolean green, boolean blue, boolean alpha) {
-            glColorMask(red, green, blue, alpha);
+            this.commands.add(() -> glColorMask(red, green, blue, alpha));
+        }
+
+        @Override
+        public void clearColor(float red, float green, float blue, float alpha) {
+            this.commands.add(() -> glClearColor(red, green, blue, alpha));
+        }
+
+        @Override
+        public void clear(int mask) {
+            this.commands.add(() -> glClear(mask));
         }
 
         @Override
         public void enable(int cap) {
-            glEnable(cap);
+            this.commands.add(() -> glEnable(cap));
         }
 
         @Override
         public void disable(int cap) {
-            glDisable(cap);
+            this.commands.add(() -> glDisable(cap));
+        }
+
+        @Override
+        public void blitNamedFramebuffer(int srcFramebuffer, int dstFramebuffer, int srcX0, int srcY0, int srcX1, int srcY1,
+                                         int dstX0, int dstY0, int dstX1, int dstY1, int mask, int filter) {
+            this.commands.add(() -> glBlitNamedFramebuffer(srcFramebuffer, dstFramebuffer, srcX0, srcY0, srcX1, srcY1,
+                    dstX0, dstY0, dstX1, dstY1, mask, filter));
         }
 
         @Override
         public void blendFuncSeparate(int srcRgb, int dstRgb, int srcAlpha, int dstAlpha) {
-            glBlendFuncSeparate(srcRgb, dstRgb, srcAlpha, dstAlpha);
+            this.commands.add(() -> glBlendFuncSeparate(srcRgb, dstRgb, srcAlpha, dstAlpha));
         }
 
         @Override
         public void depthFunc(int func) {
-            glDepthFunc(func);
+            this.commands.add(() -> glDepthFunc(func));
         }
 
         @Override
         public void stencilOp(int sfail, int dpfail, int dppass) {
-            glStencilOp(sfail, dpfail, dppass);
+            this.commands.add(() -> glStencilOp(sfail, dpfail, dppass));
         }
 
         @Override
         public void stencilFunc(int func, int ref, int mask) {
-            glStencilFunc(func, ref, mask);
+            this.commands.add(() -> glStencilFunc(func, ref, mask));
         }
 
         @Override
         public void stencilMask(int mask) {
-            glStencilMask(mask);
+            this.commands.add(() -> glStencilMask(mask));
         }
 
         @Override
         public void clearNamedFramebufferfi(int framebuffer, int buffer, int drawbuffer, float depth, int stencil) {
-            glClearNamedFramebufferfi(framebuffer, buffer, drawbuffer, depth, stencil);
+            this.commands.add(() -> glClearNamedFramebufferfi(framebuffer, buffer, drawbuffer, depth, stencil));
         }
 
         @Override
@@ -240,7 +282,14 @@ final class OpenGlGpuBackend implements GpuBackend {
 
         @Override
         public void textureParameterf(int texture, int pname, float param) {
-            glTextureParameterf(texture, pname, param);
+            this.commands.add(() -> glTextureParameterf(texture, pname, param));
+        }
+
+        private void execute() {
+            for (Runnable command : this.commands) {
+                command.run();
+            }
+            this.commands.clear();
         }
     }
 }
