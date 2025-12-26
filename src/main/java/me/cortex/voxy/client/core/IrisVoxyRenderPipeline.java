@@ -109,9 +109,9 @@ public class IrisVoxyRenderPipeline extends AbstractRenderPipeline {
 
         if (false) {//TODO: only do this if shader specifies
             //Clear the colour component
-            glBindFramebuffer(GL_FRAMEBUFFER, this.fb.framebuffer.id);
-            glClearColor(0, 0, 0, 0);
-            glClear(GL_COLOR_BUFFER_BIT);
+            this.commandList.beginRenderPass(this.fb.framebuffer.id);
+            this.commandList.clearColor(0, 0, 0, 0);
+            this.commandList.clear(GL_COLOR_BUFFER_BIT);
         }
 
         if (!this.data.useViewportDims) {
@@ -127,28 +127,29 @@ public class IrisVoxyRenderPipeline extends AbstractRenderPipeline {
         int msk = GL_DEPTH_BUFFER_BIT|GL_STENCIL_BUFFER_BIT;
         if (true) {//TODO: make shader specified
             if (false) {//TODO: only do this if shader specifies
-                glBindFramebuffer(GL_FRAMEBUFFER, this.fbTranslucent.framebuffer.id);
-                glClearColor(0, 0, 0, 0);
-                glClear(GL_COLOR_BUFFER_BIT);
+                this.commandList.beginRenderPass(this.fbTranslucent.framebuffer.id);
+                this.commandList.clearColor(0, 0, 0, 0);
+                this.commandList.clear(GL_COLOR_BUFFER_BIT);
             }
         } else {
             msk |= GL_COLOR_BUFFER_BIT;
         }
-        glBlitNamedFramebuffer(this.fb.framebuffer.id, this.fbTranslucent.framebuffer.id, 0,0, viewport.width, viewport.height, 0,0, viewport.width, viewport.height, msk, GL_NEAREST);
+        this.commandList.blitNamedFramebuffer(this.fb.framebuffer.id, this.fbTranslucent.framebuffer.id,
+                0, 0, viewport.width, viewport.height, 0, 0, viewport.width, viewport.height, msk, GL_NEAREST);
     }
 
     @Override
     protected void finish(Viewport<?> viewport, int sourceFrameBuffer, int srcWidth, int srcHeight) {
         if (this.data.renderToVanillaDepth && srcWidth == viewport.width  && srcHeight == viewport.height) {//We can only depthblit out if destination size is the same
-            glColorMask(false, false, false, false);
+            this.commandList.setColorMask(false, false, false, false);
             AbstractRenderPipeline.transformBlitDepth(this.commandList, this.depthBlit,
                     this.fbTranslucent.getDepthTex().id(), sourceFrameBuffer,
                     viewport, new Matrix4f(viewport.vanillaProjection).mul(viewport.modelView));
-            glColorMask(true, true, true, true);
+            this.commandList.setColorMask(true, true, true, true);
         } else {
             // normally disabled by AbstractRenderPipeline but since we are skipping it we do it here
-            glDisable(GL_STENCIL_TEST);
-            glDisable(GL_DEPTH_TEST);
+            this.commandList.disable(GL_STENCIL_TEST);
+            this.commandList.disable(GL_DEPTH_TEST);
         }
     }
 
@@ -176,13 +177,13 @@ public class IrisVoxyRenderPipeline extends AbstractRenderPipeline {
     }
     @Override
     public void setupAndBindOpaque(Viewport<?> viewport) {
-        this.fb.bind();
+        this.commandList.beginRenderPass(this.fb.framebuffer.id);
         this.doBindings();
     }
 
     @Override
     public void setupAndBindTranslucent(Viewport<?> viewport) {
-        this.fbTranslucent.bind();
+        this.commandList.beginRenderPass(this.fbTranslucent.framebuffer.id);
         this.doBindings();
         if (this.data.getBlender() != null) {
             this.data.getBlender().run();
