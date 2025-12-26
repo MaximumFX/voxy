@@ -12,9 +12,9 @@ import me.cortex.voxy.client.core.rendering.post.FullscreenBlit;
 import me.cortex.voxy.client.core.rendering.section.backend.AbstractSectionRenderer;
 import me.cortex.voxy.client.core.rendering.util.DepthFramebuffer;
 import me.cortex.voxy.client.core.rendering.util.DownloadStream;
+import me.cortex.voxy.client.core.gpu.GpuCommandList;
 import me.cortex.voxy.common.util.TrackedObject;
 import org.joml.Matrix4f;
-import org.lwjgl.opengl.GL30;
 import org.lwjgl.system.MemoryUtil;
 
 import java.util.List;
@@ -26,22 +26,10 @@ import static org.lwjgl.opengl.GL11C.GL_EQUAL;
 import static org.lwjgl.opengl.GL11C.GL_KEEP;
 import static org.lwjgl.opengl.GL11C.GL_REPLACE;
 import static org.lwjgl.opengl.GL11C.GL_STENCIL_TEST;
-import static org.lwjgl.opengl.GL11C.glColorMask;
-import static org.lwjgl.opengl.GL11C.glDisable;
-import static org.lwjgl.opengl.GL11C.glEnable;
-import static org.lwjgl.opengl.GL11C.glStencilFunc;
-import static org.lwjgl.opengl.GL11C.glStencilMask;
-import static org.lwjgl.opengl.GL11C.glStencilOp;
 import static org.lwjgl.opengl.GL30C.GL_DEPTH24_STENCIL8;
-import static org.lwjgl.opengl.GL30C.GL_FRAMEBUFFER;
-import static org.lwjgl.opengl.GL30C.glBindFramebuffer;
 import static org.lwjgl.opengl.GL42.GL_LEQUAL;
 import static org.lwjgl.opengl.GL42.GL_NOTEQUAL;
-import static org.lwjgl.opengl.GL42.glDepthFunc;
 import static org.lwjgl.opengl.GL42.*;
-import static org.lwjgl.opengl.GL45.glClearNamedFramebufferfi;
-import static org.lwjgl.opengl.GL45.glGetNamedFramebufferAttachmentParameteri;
-import static org.lwjgl.opengl.GL45C.glBindTextureUnit;
 
 public abstract class AbstractRenderPipeline extends TrackedObject {
     private final BooleanSupplier frexStillHasWork;
@@ -59,6 +47,7 @@ public abstract class AbstractRenderPipeline extends TrackedObject {
     public final DepthFramebuffer fb = new DepthFramebuffer(GL_DEPTH24_STENCIL8);
 
     protected final boolean deferTranslucency;
+    protected final GpuCommandList commandList;
 
     private static final int DEPTH_SAMPLER = glGenSamplers();
     static {
@@ -72,6 +61,7 @@ public abstract class AbstractRenderPipeline extends TrackedObject {
         this.nodeCleaner = nodeCleaner;
         this.traversal = traversal;
         this.deferTranslucency = deferTranslucency;
+        this.commandList = VoxyClient.getBackend().createCommandList();
     }
 
     //Allows pipelines to configure model baking system
@@ -90,11 +80,12 @@ public abstract class AbstractRenderPipeline extends TrackedObject {
     protected abstract int setup(Viewport<?> viewport, int sourceFramebuffer, int srcWidth, int srcHeight);
     protected abstract void postOpaquePreTranslucent(Viewport<?> viewport);
     protected void finish(Viewport<?> viewport, int sourceFrameBuffer, int srcWidth, int srcHeight) {
-        glDisable(GL_STENCIL_TEST);
-        glBindFramebuffer(GL_FRAMEBUFFER, sourceFrameBuffer);
+        this.commandList.disable(GL_STENCIL_TEST);
+        this.commandList.beginRenderPass(sourceFrameBuffer);
     }
 
     public void runPipeline(Viewport<?> viewport, int sourceFrameBuffer, int srcWidth, int srcHeight) {
+        this.commandList.begin();
         int depthTexture = this.setup(viewport, sourceFrameBuffer, srcWidth, srcHeight);
 
         var rs = ((AbstractSectionRenderer)this.sectionRenderer);
@@ -115,21 +106,23 @@ public abstract class AbstractRenderPipeline extends TrackedObject {
         }
 
         this.finish(viewport, sourceFrameBuffer, srcWidth, srcHeight);
-        glBindFramebuffer(GL_FRAMEBUFFER, sourceFrameBuffer);
+        this.commandList.beginRenderPass(sourceFrameBuffer);
+        this.commandList.end();
+        VoxyClient.getBackend().submit(this.commandList, null);
     }
 
     protected void initDepthStencil(int sourceFrameBuffer, int targetFb, int srcWidth, int srcHeight, int width, int height) {
-        glClearNamedFramebufferfi(targetFb, GL_DEPTH_STENCIL, 0, 1.0f, 1);
+        this.commandList.clearNamedFramebufferfi(targetFb, GL_DEPTH_STENCIL, 0, 1.0f, 1);
         // using blit to copy depth from mismatched depth formats is not portable so instead a full screen pass is performed for a depth copy
         // the mismatched formats in this case is the d32 to d24s8
-        glBindFramebuffer(GL30.GL_FRAMEBUFFER, targetFb);
+        this.commandList.beginRenderPass(targetFb);
 
         this.depthCopy.bind();
-        int depthTexture = glGetNamedFramebufferAttachmentParameteri(sourceFrameBuffer, GL_DEPTH_ATTACHMENT, GL_FRAMEBUFFER_ATTACHMENT_OBJECT_NAME);
-        glBindTextureUnit(0, depthTexture);
-        glBindSampler(0, DEPTH_SAMPLER);
-        glUniform2f(1,((float)width)/srcWidth, ((float)height)/srcHeight);
-        glColorMask(false,false,false,false);
+        int depthTexture = this.commandList.getNamedFramebufferAttachmentParameteri(sourceFrameBuffer, GL_DEPTH_ATTACHMENT, GL_FRAMEBUFFER_ATTACHMENT_OBJECT_NAME);
+        this.commandList.bindDescriptors(0, depthTexture);
+        this.commandList.bindSampler(0, DEPTH_SAMPLER);
+        this.commandList.setUniform2f(1,((float)width)/srcWidth, ((float)height)/srcHeight);
+        this.commandList.setColorMask(false,false,false,false);
         this.depthCopy.blit();
 
         /*
@@ -141,49 +134,49 @@ public abstract class AbstractRenderPipeline extends TrackedObject {
         //This whole thing is hell, we basicly want to create a mask stenicel/depth mask specificiclly
         // in theory we could do this in a single pass by passing in the depth buffer from the sourceFrambuffer
         // but the current implmentation does a 2 pass system
-        glEnable(GL_STENCIL_TEST);
-        glStencilOp(GL_KEEP, GL_KEEP, GL_REPLACE);
-        glStencilFunc(GL_ALWAYS, 0, 0xFF);
-        glStencilMask(0xFF);
+        this.commandList.enable(GL_STENCIL_TEST);
+        this.commandList.stencilOp(GL_KEEP, GL_KEEP, GL_REPLACE);
+        this.commandList.stencilFunc(GL_ALWAYS, 0, 0xFF);
+        this.commandList.stencilMask(0xFF);
 
-        glEnable(GL_DEPTH_TEST);
-        glDepthFunc(GL_NOTEQUAL);//If != 1 pass
+        this.commandList.enable(GL_DEPTH_TEST);
+        this.commandList.depthFunc(GL_NOTEQUAL);//If != 1 pass
         //We do here
         this.depthMaskBlit.blit();
-        glDisable(GL_DEPTH_TEST);
+        this.commandList.disable(GL_DEPTH_TEST);
 
         //Blit depth 0 where stencil is 0
-        glStencilOp(GL_KEEP, GL_KEEP, GL_KEEP);
-        glStencilFunc(GL_EQUAL, 0, 0xFF);
+        this.commandList.stencilOp(GL_KEEP, GL_KEEP, GL_KEEP);
+        this.commandList.stencilFunc(GL_EQUAL, 0, 0xFF);
 
         this.depthSetBlit.blit();
 
-        glDepthFunc(GL_LEQUAL);
-        glColorMask(true,true,true,true);
+        this.commandList.depthFunc(GL_LEQUAL);
+        this.commandList.setColorMask(true,true,true,true);
 
         //Make voxy terrain render only where there isnt mc terrain
-        glStencilOp(GL_KEEP, GL_KEEP, GL_KEEP);
-        glStencilFunc(GL_EQUAL, 1, 0xFF);
+        this.commandList.stencilOp(GL_KEEP, GL_KEEP, GL_KEEP);
+        this.commandList.stencilFunc(GL_EQUAL, 1, 0xFF);
     }
 
     private static final long SCRATCH = MemoryUtil.nmemAlloc(4*4*4);
-    protected static void transformBlitDepth(FullscreenBlit blitShader, int srcDepthTex, int dstFB, Viewport<?> viewport, Matrix4f targetTransform) {
+    protected static void transformBlitDepth(GpuCommandList commandList, FullscreenBlit blitShader, int srcDepthTex, int dstFB, Viewport<?> viewport, Matrix4f targetTransform) {
         // at this point the dst frame buffer doesn't have a stencil attachment so we don't need to keep the stencil test on for the blit
         // in the worst case the dstFB does have a stencil attachment causing this pass to become 'corrupted'
-        glDisable(GL_STENCIL_TEST);
-        glBindFramebuffer(GL30.GL_FRAMEBUFFER, dstFB);
+        commandList.disable(GL_STENCIL_TEST);
+        commandList.beginRenderPass(dstFB);
 
         blitShader.bind();
-        glBindTextureUnit(0, srcDepthTex);
+        commandList.bindDescriptors(0, srcDepthTex);
         new Matrix4f(viewport.MVP).invert().getToAddress(SCRATCH);
-        nglUniformMatrix4fv(1, 1, false, SCRATCH);//inverse fromProjection
+        commandList.setUniformMatrix4fv(1, 1, false, SCRATCH);//inverse fromProjection
         targetTransform.getToAddress(SCRATCH);//new Matrix4f(tooProjection).mul(vp.modelView).get(data);
-        nglUniformMatrix4fv(2, 1, false, SCRATCH);//tooProjection
+        commandList.setUniformMatrix4fv(2, 1, false, SCRATCH);//tooProjection
 
-        glEnable(GL_DEPTH_TEST);
+        commandList.enable(GL_DEPTH_TEST);
         blitShader.blit();
-        glDisable(GL_STENCIL_TEST);
-        glDisable(GL_DEPTH_TEST);
+        commandList.disable(GL_STENCIL_TEST);
+        commandList.disable(GL_DEPTH_TEST);
     }
 
     protected void innerPrimaryWork(Viewport<?> viewport, int depthBuffer) {
@@ -208,7 +201,7 @@ public abstract class AbstractRenderPipeline extends TrackedObject {
             TimingStatistics.dynamic.stop();
             TimingStatistics.main.start();
 
-            glMemoryBarrier(GL_FRAMEBUFFER_BARRIER_BIT | GL_PIXEL_BUFFER_BARRIER_BIT);
+            this.commandList.bufferBarrier(GL_FRAMEBUFFER_BARRIER_BIT | GL_PIXEL_BUFFER_BARRIER_BIT);
 
             TimingStatistics.F.start();
             this.traversal.doTraversal(viewport);

@@ -19,21 +19,15 @@ import org.lwjgl.system.MemoryStack;
 
 import java.util.function.BooleanSupplier;
 
-import static org.lwjgl.opengl.ARBComputeShader.glDispatchCompute;
-import static org.lwjgl.opengl.ARBShaderImageLoadStore.glBindImageTexture;
 import static org.lwjgl.opengl.GL11.GL_BLEND;
 import static org.lwjgl.opengl.GL11.GL_ONE;
 import static org.lwjgl.opengl.GL11.GL_ONE_MINUS_SRC_ALPHA;
 import static org.lwjgl.opengl.GL11.GL_SRC_ALPHA;
-import static org.lwjgl.opengl.GL11.glEnable;
 import static org.lwjgl.opengl.GL11C.GL_NEAREST;
 import static org.lwjgl.opengl.GL11C.GL_RGBA8;
-import static org.lwjgl.opengl.GL14.glBlendFuncSeparate;
 import static org.lwjgl.opengl.GL15.GL_READ_WRITE;
 import static org.lwjgl.opengl.GL30C.*;
 import static org.lwjgl.opengl.GL43.GL_DEPTH_STENCIL_TEXTURE_MODE;
-import static org.lwjgl.opengl.GL45C.glBindTextureUnit;
-import static org.lwjgl.opengl.GL45C.glTextureParameterf;
 
 public class NormalRenderPipeline extends AbstractRenderPipeline {
     private GpuTexture colourTex;
@@ -71,11 +65,11 @@ public class NormalRenderPipeline extends AbstractRenderPipeline {
             this.fbSSAO.bind(this.fb.getDepthAttachmentType(), this.fb.getDepthTex()).bind(GL_COLOR_ATTACHMENT0, this.colourSSAOTex).verify();
 
 
-            glTextureParameterf(this.colourTex.id(), GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-            glTextureParameterf(this.colourTex.id(), GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-            glTextureParameterf(this.colourSSAOTex.id(), GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-            glTextureParameterf(this.colourSSAOTex.id(), GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-            glTextureParameterf(this.fb.getDepthTex().id(), GL_DEPTH_STENCIL_TEXTURE_MODE, GL_DEPTH_COMPONENT);
+            this.commandList.textureParameterf(this.colourTex.id(), GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+            this.commandList.textureParameterf(this.colourTex.id(), GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+            this.commandList.textureParameterf(this.colourSSAOTex.id(), GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+            this.commandList.textureParameterf(this.colourSSAOTex.id(), GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+            this.commandList.textureParameterf(this.fb.getDepthTex().id(), GL_DEPTH_STENCIL_TEXTURE_MODE, GL_DEPTH_COMPONENT);
         }
 
         this.initDepthStencil(sourceFB, this.fb.framebuffer.id, viewport.width, viewport.height, viewport.width, viewport.height);
@@ -89,19 +83,18 @@ public class NormalRenderPipeline extends AbstractRenderPipeline {
         try (var stack = MemoryStack.stackPush()) {
             long ptr = stack.nmalloc(4*4*4);
             viewport.MVP.getToAddress(ptr);
-            nglUniformMatrix4fv(3, 1, false, ptr);//MVP
+            this.commandList.setUniformMatrix4fv(3, 1, false, ptr);//MVP
             viewport.MVP.invert(new Matrix4f()).getToAddress(ptr);
-            nglUniformMatrix4fv(4, 1, false, ptr);//invMVP
+            this.commandList.setUniformMatrix4fv(4, 1, false, ptr);//invMVP
         }
 
 
-        glBindImageTexture(0, this.colourSSAOTex.id(), 0, false,0, GL_READ_WRITE, GL_RGBA8);
-        glBindTextureUnit(1, this.fb.getDepthTex().id());
-        glBindTextureUnit(2, this.colourTex.id());
+        this.commandList.bindImageTexture(0, this.colourSSAOTex.id(), 0, false,0, GL_READ_WRITE, GL_RGBA8);
+        this.commandList.bindDescriptors(1, this.fb.getDepthTex().id(), this.colourTex.id());
 
-        glDispatchCompute((viewport.width+31)/32, (viewport.height+31)/32, 1);
+        this.commandList.dispatchCompute((viewport.width+31)/32, (viewport.height+31)/32, 1);
 
-        glBindFramebuffer(GL_FRAMEBUFFER, this.fbSSAO.id);
+        this.commandList.beginRenderPass(this.fbSSAO.id);
     }
 
     @Override
@@ -115,22 +108,22 @@ public class NormalRenderPipeline extends AbstractRenderPipeline {
                 float endDistance = Math.max(Minecraft.getInstance().gameRenderer.getRenderDistance(), 20*16);//TODO: make this constant a config option
                 endDistance *= (float)Math.sqrt(3);
                 float startDelta = -start * invEndFogDelta;
-                glUniform4f(4, invEndFogDelta, startDelta, Math.clamp(endDistance*invEndFogDelta+startDelta, 0, 1),0);//
-                glUniform4f(5, viewport.fogParameters.red(), viewport.fogParameters.green(), viewport.fogParameters.blue(), viewport.fogParameters.alpha());
+                this.commandList.setUniform4f(4, invEndFogDelta, startDelta, Math.clamp(endDistance*invEndFogDelta+startDelta, 0, 1),0);//
+                this.commandList.setUniform4f(5, viewport.fogParameters.red(), viewport.fogParameters.green(), viewport.fogParameters.blue(), viewport.fogParameters.alpha());
             } else {
-                glUniform4f(4, 0, 0, 0, 0);
-                glUniform4f(5, 0, 0, 0, 0);
+                this.commandList.setUniform4f(4, 0, 0, 0, 0);
+                this.commandList.setUniform4f(5, 0, 0, 0, 0);
             }
         }
 
-        glBindTextureUnit(3, this.colourSSAOTex.id());
+        this.commandList.bindDescriptors(3, this.colourSSAOTex.id());
 
         //Do alpha blending
 
-        glEnable(GL_BLEND);
-        glBlendFuncSeparate(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA, GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
-        AbstractRenderPipeline.transformBlitDepth(this.finalBlit, this.fb.getDepthTex().id(), sourceFrameBuffer, viewport, new Matrix4f(viewport.vanillaProjection).mul(viewport.modelView));
-        glDisable(GL_BLEND);
+        this.commandList.enable(GL_BLEND);
+        this.commandList.blendFuncSeparate(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA, GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
+        AbstractRenderPipeline.transformBlitDepth(this.commandList, this.finalBlit, this.fb.getDepthTex().id(), sourceFrameBuffer, viewport, new Matrix4f(viewport.vanillaProjection).mul(viewport.modelView));
+        this.commandList.disable(GL_BLEND);
         //glBlitNamedFramebuffer(this.fbSSAO.id, sourceFrameBuffer, 0,0, viewport.width, viewport.height, 0,0, viewport.width, viewport.height, GL_COLOR_BUFFER_BIT, GL_NEAREST);
     }
 
@@ -141,7 +134,7 @@ public class NormalRenderPipeline extends AbstractRenderPipeline {
 
     @Override
     public void setupAndBindTranslucent(Viewport<?> viewport) {
-        glBindFramebuffer(GL_FRAMEBUFFER, this.fbSSAO.id);
+        this.commandList.beginRenderPass(this.fbSSAO.id);
     }
 
     @Override
