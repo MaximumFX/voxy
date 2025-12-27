@@ -2,6 +2,7 @@ package me.cortex.voxy.client.core.rendering.util;
 
 
 import me.cortex.voxy.client.VoxyClient;
+import me.cortex.voxy.client.core.gpu.GpuBackend;
 import me.cortex.voxy.client.core.gpu.GpuBuffer;
 import me.cortex.voxy.client.core.gpu.GpuDevice;
 import me.cortex.voxy.client.core.gpu.GpuFence;
@@ -13,7 +14,6 @@ import java.util.ArrayList;
 import java.util.Deque;
 
 import static org.lwjgl.opengl.ARBMapBufferRange.GL_MAP_READ_BIT;
-import static org.lwjgl.opengl.GL11.glFinish;
 import static org.lwjgl.opengl.GL44.GL_MAP_COHERENT_BIT;
 
 //Special download stream which allows access to the download buffer directly
@@ -24,13 +24,16 @@ public class RawDownloadStream {
     private record DownloadFrame(GpuFence fence, DownloadFragment[] fragments) {}
 
     private final GpuBuffer downloadBuffer;
+    private final GpuDevice device;
+    private final boolean immediateFenceSignal;
     private final AllocationArena allocationArena = new AllocationArena();
     private final ArrayList<DownloadFragment> frameFragments = new ArrayList<>();
     private final Deque<DownloadFrame> frames = new ArrayDeque<>();
 
     public RawDownloadStream(int size) {
-        GpuDevice device = VoxyClient.getBackend().device();
-        this.downloadBuffer = device.createMappedBuffer(new GpuDevice.MappedBufferDescriptor(size, GL_MAP_READ_BIT | GL_MAP_COHERENT_BIT, "RawDownloadStream"));
+        this.device = VoxyClient.getBackend().device();
+        this.immediateFenceSignal = VoxyClient.getBackend().backendType() == GpuBackend.BackendType.VULKAN;
+        this.downloadBuffer = this.device.createMappedBuffer(new GpuDevice.MappedBufferDescriptor(size, GL_MAP_READ_BIT | GL_MAP_COHERENT_BIT, "RawDownloadStream"));
         this.allocationArena.setLimit(size);
     }
 
@@ -39,7 +42,7 @@ public class RawDownloadStream {
         if (allocation == AllocationArena.SIZE_LIMIT) {
             Logger.warn("Raw download stream full, preemptively committing, this could cause bad things to happen");
             //Hit the download limit, attempt to free
-            glFinish();
+            this.device.waitForIdle();
             this.tick();
             allocation = (int) this.allocationArena.alloc(size);
             if (allocation == AllocationArena.SIZE_LIMIT) {
@@ -56,7 +59,11 @@ public class RawDownloadStream {
         if (!this.frameFragments.isEmpty()) {
             var fragments = this.frameFragments.toArray(new DownloadFragment[0]);
             this.frameFragments.clear();
-            this.frames.add(new DownloadFrame(VoxyClient.getBackend().device().createFence(), fragments));
+            GpuFence fence = this.device.createFence();
+            if (this.immediateFenceSignal) {
+                fence.signal();
+            }
+            this.frames.add(new DownloadFrame(fence, fragments));
         }
     }
 
@@ -83,11 +90,11 @@ public class RawDownloadStream {
     }
 
     public void free() {
-        glFinish();
+        this.device.waitForIdle();
         this.tick();
         GpuFence fence = VoxyClient.getBackend().device().createFence();
         while (!fence.signaled()) {
-            glFinish();
+            this.device.waitForIdle();
         }
         fence.free();
         this.tick();

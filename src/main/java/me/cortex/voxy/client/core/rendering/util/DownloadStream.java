@@ -2,6 +2,7 @@ package me.cortex.voxy.client.core.rendering.util;
 
 import it.unimi.dsi.fastutil.longs.LongArrayList;
 import me.cortex.voxy.client.VoxyClient;
+import me.cortex.voxy.client.core.gpu.GpuBackend;
 import me.cortex.voxy.client.core.gpu.GpuBuffer;
 import me.cortex.voxy.client.core.gpu.GpuDevice;
 import me.cortex.voxy.client.core.gpu.GpuFence;
@@ -15,12 +16,9 @@ import java.util.Deque;
 import java.util.function.Consumer;
 
 import static me.cortex.voxy.common.util.AllocationArena.SIZE_LIMIT;
-import static org.lwjgl.opengl.GL11.glFinish;
 import static org.lwjgl.opengl.GL30C.GL_MAP_READ_BIT;
 import static org.lwjgl.opengl.GL42.GL_BUFFER_UPDATE_BARRIER_BIT;
-import static org.lwjgl.opengl.GL42.glMemoryBarrier;
 import static org.lwjgl.opengl.GL44.GL_CLIENT_MAPPED_BUFFER_BARRIER_BIT;
-import static org.lwjgl.opengl.GL45.glCopyNamedBufferSubData;
 
 public class DownloadStream {
     public interface DownloadResultConsumer {
@@ -29,6 +27,8 @@ public class DownloadStream {
 
     private final AllocationArena allocationArena = new AllocationArena();
     private final GpuBuffer downloadBuffer;
+    private final GpuDevice device;
+    private final boolean immediateFenceSignal;
 
     private final Deque<DownloadFrame> frames = new ArrayDeque<>();
     private final LongArrayList thisFrameAllocations = new LongArrayList();
@@ -36,8 +36,9 @@ public class DownloadStream {
     private final ArrayList<DownloadData> thisFrameDownloadList = new ArrayList<>();
 
     public DownloadStream(long size) {
-        GpuDevice device = VoxyClient.getBackend().device();
-        this.downloadBuffer = device.createMappedBuffer(new GpuDevice.MappedBufferDescriptor(size, GL_MAP_READ_BIT, "DownloadStream"));
+        this.device = VoxyClient.getBackend().device();
+        this.immediateFenceSignal = VoxyClient.getBackend().backendType() == GpuBackend.BackendType.VULKAN;
+        this.downloadBuffer = this.device.createMappedBuffer(new GpuDevice.MappedBufferDescriptor(size, GL_MAP_READ_BIT, "DownloadStream"));
         this.allocationArena.setLimit(size);
     }
 
@@ -78,7 +79,7 @@ public class DownloadStream {
                 this.commit();
                 int attempts = 10;
                 while (--attempts != 0 && this.caddr == SIZE_LIMIT) {
-                    glFinish();
+                    this.device.waitForIdle();
                     this.tick();
                     this.caddr = this.allocationArena.alloc((int) size);
                 }
@@ -109,12 +110,12 @@ public class DownloadStream {
         if (this.downloadList.isEmpty()) {
             return;
         }
-        glMemoryBarrier(GL_BUFFER_UPDATE_BARRIER_BIT);
+        this.device.bufferBarrier(GL_BUFFER_UPDATE_BARRIER_BIT);
         //Copies all the data from target buffers into the download stream
         for (var entry : this.downloadList) {
-            glCopyNamedBufferSubData(entry.target.id(), this.downloadBuffer.id(), entry.targetOffset, entry.downloadStreamOffset, entry.size);
+            this.device.copyBuffer(entry.target, this.downloadBuffer, entry.targetOffset, entry.downloadStreamOffset, entry.size);
         }
-        glMemoryBarrier(GL_CLIENT_MAPPED_BUFFER_BARRIER_BIT | GL_BUFFER_UPDATE_BARRIER_BIT);
+        this.device.bufferBarrier(GL_CLIENT_MAPPED_BUFFER_BARRIER_BIT | GL_BUFFER_UPDATE_BARRIER_BIT);
         this.thisFrameDownloadList.addAll(this.downloadList);
         this.downloadList.clear();
 
@@ -125,7 +126,11 @@ public class DownloadStream {
     public void tick() {
         this.commit();
         if (!this.thisFrameAllocations.isEmpty()) {
-            this.frames.add(new DownloadFrame(VoxyClient.getBackend().device().createFence(), new LongArrayList(this.thisFrameAllocations), new ArrayList<>(this.thisFrameDownloadList)));
+            GpuFence fence = this.device.createFence();
+            if (this.immediateFenceSignal) {
+                fence.signal();
+            }
+            this.frames.add(new DownloadFrame(fence, new LongArrayList(this.thisFrameAllocations), new ArrayList<>(this.thisFrameDownloadList)));
             this.thisFrameAllocations.clear();
             this.thisFrameDownloadList.clear();
         }
@@ -152,9 +157,9 @@ public class DownloadStream {
 
     //Synchonize force flushes everything
     public void waitDiscard() {
-        glFinish();
+        this.device.waitForIdle();
         var fence = VoxyClient.getBackend().device().createFence();
-        glFinish();
+        this.device.waitForIdle();
         while (!fence.signaled())
             Thread.onSpinWait();
         fence.free();
@@ -167,10 +172,10 @@ public class DownloadStream {
     }
 
     public void flushWaitClear() {
-        glFinish();
+        this.device.waitForIdle();
         this.tick();
         var fence = VoxyClient.getBackend().device().createFence();
-        glFinish();
+        this.device.waitForIdle();
         while (!fence.signaled())
             Thread.onSpinWait();
         fence.free();

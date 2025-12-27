@@ -2,6 +2,7 @@ package me.cortex.voxy.client.core.rendering.util;
 
 import it.unimi.dsi.fastutil.longs.LongArrayList;
 import me.cortex.voxy.client.VoxyClient;
+import me.cortex.voxy.client.core.gpu.GpuBackend;
 import me.cortex.voxy.client.core.gpu.GpuBuffer;
 import me.cortex.voxy.client.core.gpu.GpuDevice;
 import me.cortex.voxy.client.core.gpu.GpuFence;
@@ -13,18 +14,16 @@ import java.util.ArrayDeque;
 import java.util.Deque;
 
 import static me.cortex.voxy.common.util.AllocationArena.SIZE_LIMIT;
-import static org.lwjgl.opengl.ARBDirectStateAccess.glCopyNamedBufferSubData;
 import static org.lwjgl.opengl.ARBMapBufferRange.*;
-import static org.lwjgl.opengl.GL11.glFinish;
-import static org.lwjgl.opengl.GL42.glMemoryBarrier;
 import static org.lwjgl.opengl.GL42C.GL_BUFFER_UPDATE_BARRIER_BIT;
 import static org.lwjgl.opengl.GL44.GL_CLIENT_STORAGE_BIT;
 import static org.lwjgl.opengl.GL44.GL_MAP_COHERENT_BIT;
-import static org.lwjgl.opengl.GL45C.glFlushMappedNamedBufferRange;
 
 public class UploadStream {
     private final AllocationArena allocationArena = new AllocationArena();
     private final GpuBuffer uploadBuffer;
+    private final GpuDevice device;
+    private final boolean immediateFenceSignal;
 
     private final Deque<UploadFrame> frames = new ArrayDeque<>();
     private final LongArrayList thisFrameAllocations = new LongArrayList();
@@ -33,8 +32,9 @@ public class UploadStream {
     private static final boolean USE_COHERENT = false;
 
     public UploadStream(long size) {
-        GpuDevice device = VoxyClient.getBackend().device();
-        this.uploadBuffer = device.createMappedBuffer(new GpuDevice.MappedBufferDescriptor(
+        this.device = VoxyClient.getBackend().device();
+        this.immediateFenceSignal = VoxyClient.getBackend().backendType() == GpuBackend.BackendType.VULKAN;
+        this.uploadBuffer = this.device.createMappedBuffer(new GpuDevice.MappedBufferDescriptor(
                 size,
                 GL_CLIENT_STORAGE_BIT | GL_MAP_WRITE_BIT | GL_MAP_UNSYNCHRONIZED_BIT | (USE_COHERENT ? GL_MAP_COHERENT_BIT : GL_MAP_FLUSH_EXPLICIT_BIT),
                 "UploadStream"
@@ -79,7 +79,7 @@ public class UploadStream {
         long addr;
         if (this.caddr == -1 || !this.allocationArena.expand(this.caddr, (int) size)) {
             if ((!USE_COHERENT)&&this.caddr!=-1) {
-                glFlushMappedNamedBufferRange(this.uploadBuffer.id(), this.caddr, this.offset);
+                this.device.flushMappedRange(this.uploadBuffer, this.caddr, this.offset);
             }
             this.caddr = this.allocationArena.alloc((int) size);//TODO: replace with allocFromLargest
             if (this.caddr == SIZE_LIMIT) {
@@ -89,7 +89,7 @@ public class UploadStream {
                 Logger.error("Upload stream full, preemptively committing, this could cause bad things to happen");
                 int attempts = 10;
                 while (--attempts != 0 && this.caddr == SIZE_LIMIT) {
-                    glFinish();
+                    this.device.waitForIdle();
                     this.tick(false);
                     this.caddr = this.allocationArena.alloc((int) size);
                 }
@@ -115,21 +115,21 @@ public class UploadStream {
     public void commit() {
         if ((!USE_COHERENT)&&this.caddr != -1) {
             //Flush this allocation
-            glFlushMappedNamedBufferRange(this.uploadBuffer.id(), this.caddr, this.offset);
+            this.device.flushMappedRange(this.uploadBuffer, this.caddr, this.offset);
         }
 
         if (this.uploadList.isEmpty()) {
             return;
         }
 
-        glMemoryBarrier(GL_BUFFER_UPDATE_BARRIER_BIT);
+        this.device.bufferBarrier(GL_BUFFER_UPDATE_BARRIER_BIT);
         //Execute all the copies
         for (var entry : this.uploadList) {
-            glCopyNamedBufferSubData(this.uploadBuffer.id(), entry.target.id(), entry.uploadOffset, entry.targetOffset, entry.size);
+            this.device.copyBuffer(this.uploadBuffer, entry.target, entry.uploadOffset, entry.targetOffset, entry.size);
         }
         this.uploadList.clear();
 
-        glMemoryBarrier(GL_BUFFER_UPDATE_BARRIER_BIT);//|GL_SHADER_STORAGE_BARRIER_BIT|GL_UNIFORM_BARRIER_BIT //expected + other barriers which may cause issues if not
+        this.device.bufferBarrier(GL_BUFFER_UPDATE_BARRIER_BIT);//|GL_SHADER_STORAGE_BARRIER_BIT|GL_UNIFORM_BARRIER_BIT //expected + other barriers which may cause issues if not
 
         this.caddr = -1;
         this.offset = 0;
@@ -144,7 +144,11 @@ public class UploadStream {
         }
 
         if (!this.thisFrameAllocations.isEmpty()) {
-            this.frames.add(new UploadFrame(VoxyClient.getBackend().device().createFence(), new LongArrayList(this.thisFrameAllocations)));
+            GpuFence fence = this.device.createFence();
+            if (this.immediateFenceSignal) {
+                fence.signal();
+            }
+            this.frames.add(new UploadFrame(fence, new LongArrayList(this.thisFrameAllocations)));
             this.thisFrameAllocations.clear();
         }
 
