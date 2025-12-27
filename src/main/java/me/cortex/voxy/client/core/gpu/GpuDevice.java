@@ -110,4 +110,17 @@ public interface GpuDevice {
     GpuQueryPool createQueryPool(QueryPoolDescriptor descriptor);
 
     GpuBuffer createMappedBuffer(MappedBufferDescriptor descriptor);
+
+    default void flushMappedRange(GpuBuffer buffer, long offset, long size) {
+    }
+
+    default void copyBuffer(GpuBuffer src, GpuBuffer dst, long srcOffset, long dstOffset, long size) {
+        throw new UnsupportedOperationException("Buffer copy not supported by this backend");
+    }
+
+    default void bufferBarrier(int barrierBits) {
+    }
+
+    default void waitForIdle() {
+    }
 }

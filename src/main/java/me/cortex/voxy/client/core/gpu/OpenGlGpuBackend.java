@@ -36,6 +36,9 @@ import static org.lwjgl.opengl.GL45C.nglUniformMatrix4fv;
 import static org.lwjgl.opengl.GL45C.glUniform2f;
 import static org.lwjgl.opengl.GL45C.glUniform4f;
 import static org.lwjgl.opengl.ARBComputeShader.glDispatchCompute;
+import static org.lwjgl.opengl.ARBDirectStateAccess.glCopyNamedBufferSubData;
+import static org.lwjgl.opengl.GL11.glFinish;
+import static org.lwjgl.opengl.GL45C.glFlushMappedNamedBufferRange;
 
 final class OpenGlGpuBackend implements GpuBackend {
     private final GpuDevice device = new OpenGlGpuDevice();
@@ -122,6 +125,26 @@ final class OpenGlGpuBackend implements GpuBackend {
                 buffer.name(descriptor.label());
             }
             return buffer;
+        }
+
+        @Override
+        public void flushMappedRange(GpuBuffer buffer, long offset, long size) {
+            glFlushMappedNamedBufferRange(buffer.id(), offset, size);
+        }
+
+        @Override
+        public void copyBuffer(GpuBuffer src, GpuBuffer dst, long srcOffset, long dstOffset, long size) {
+            glCopyNamedBufferSubData(src.id(), dst.id(), srcOffset, dstOffset, size);
+        }
+
+        @Override
+        public void bufferBarrier(int barrierBits) {
+            glMemoryBarrier(barrierBits);
+        }
+
+        @Override
+        public void waitForIdle() {
+            glFinish();
         }
     }
 

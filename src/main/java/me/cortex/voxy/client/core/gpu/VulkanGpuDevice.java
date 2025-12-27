@@ -63,4 +63,28 @@ final class VulkanGpuDevice implements GpuDevice {
     public GpuBuffer createMappedBuffer(MappedBufferDescriptor descriptor) {
         return VulkanGpuBuffer.mapped(descriptor);
     }
+
+    @Override
+    public void flushMappedRange(GpuBuffer buffer, long offset, long size) {
+    }
+
+    @Override
+    public void copyBuffer(GpuBuffer src, GpuBuffer dst, long srcOffset, long dstOffset, long size) {
+        if (!(src instanceof VulkanGpuBuffer srcBuffer) || !(dst instanceof VulkanGpuBuffer dstBuffer)) {
+            throw new IllegalArgumentException("Vulkan buffer copy requires VulkanGpuBuffer instances");
+        }
+        long srcAddress = srcBuffer.deviceAddress() + srcOffset;
+        long dstAddress = dstBuffer.deviceAddress() + dstOffset;
+        org.lwjgl.system.MemoryUtil.memCopy(srcAddress, dstAddress, size);
+    }
+
+    @Override
+    public void bufferBarrier(int barrierBits) {
+        VulkanPipelineBarrier.fromGlBarrierBits(barrierBits);
+    }
+
+    @Override
+    public void waitForIdle() {
+        this.queue.waitForIdle();
+    }
 }
