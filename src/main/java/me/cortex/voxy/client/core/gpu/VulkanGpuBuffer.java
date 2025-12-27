@@ -11,7 +11,9 @@ final class VulkanGpuBuffer implements GpuBuffer {
     private final int id;
     private final long size;
     private final boolean sparse;
+    private final ByteBuffer deviceMemory;
     private final ByteBuffer mappedBuffer;
+    private final boolean ownsDeviceMemory;
     private String name;
 
     private VulkanGpuBuffer(long size, boolean sparse, ByteBuffer mappedBuffer, String name) {
@@ -19,10 +21,14 @@ final class VulkanGpuBuffer implements GpuBuffer {
         this.size = size;
         this.sparse = sparse;
         this.mappedBuffer = mappedBuffer;
-        this.name = name;
-        if (mappedBuffer != null) {
-            MemoryUtil.memSet(MemoryUtil.memAddress(mappedBuffer), 0, mappedBuffer.remaining());
+        if (mappedBuffer == null) {
+            this.deviceMemory = MemoryUtil.memAlloc((int) size);
+        } else {
+            this.deviceMemory = mappedBuffer;
         }
+        this.ownsDeviceMemory = true;
+        this.name = name;
+        MemoryUtil.memSet(MemoryUtil.memAddress(this.deviceMemory), 0, this.deviceMemory.remaining());
     }
 
     static VulkanGpuBuffer unmapped(GpuDevice.BufferDescriptor descriptor) {
@@ -91,10 +97,14 @@ final class VulkanGpuBuffer implements GpuBuffer {
         return MemoryUtil.memAddress(this.mappedBuffer);
     }
 
+    long deviceAddress() {
+        return MemoryUtil.memAddress(this.deviceMemory);
+    }
+
     @Override
     public void close() {
-        if (this.mappedBuffer != null) {
-            MemoryUtil.memFree(this.mappedBuffer);
+        if (this.ownsDeviceMemory) {
+            MemoryUtil.memFree(this.deviceMemory);
         }
     }
 
