@@ -23,17 +23,30 @@ final class VulkanGpuDevice implements GpuDevice {
 
     @Override
     public GpuShaderModule createShaderModule(ShaderModuleDescriptor descriptor) {
-        return new VulkanGpuShaderModule(descriptor.label(), descriptor.code());
+        byte[] code = descriptor.code();
+        if (code == null && descriptor.resourceId() != null) {
+            code = GpuShaderResources.loadSpirv(descriptor.resourceId());
+        }
+        if (code == null) {
+            throw new IllegalArgumentException("Vulkan shader module requires SPIR-V code or resource id");
+        }
+        return new VulkanGpuShaderModule(descriptor.label(), code);
     }
 
     @Override
     public GpuPipelineLayout createPipelineLayout(PipelineLayoutDescriptor descriptor) {
-        return new VulkanGpuPipelineLayout(descriptor.label());
+        return new VulkanGpuPipelineLayout(descriptor.bindings(), descriptor.label());
     }
 
     @Override
     public GpuPipeline createPipeline(PipelineDescriptor descriptor) {
-        return new VulkanGpuPipeline(descriptor.label());
+        if (!(descriptor.layout() instanceof VulkanGpuPipelineLayout layout)) {
+            throw new IllegalArgumentException("Vulkan pipeline requires a Vulkan pipeline layout");
+        }
+        if (descriptor.stages().isEmpty()) {
+            throw new IllegalArgumentException("Vulkan pipeline requires at least one shader stage");
+        }
+        return new VulkanGpuPipeline(layout, descriptor.stages(), descriptor.label());
     }
 
     @Override

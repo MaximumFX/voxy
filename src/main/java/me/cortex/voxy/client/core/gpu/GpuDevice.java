@@ -1,5 +1,9 @@
 package me.cortex.voxy.client.core.gpu;
 
+import java.util.List;
+import java.util.Objects;
+import java.util.Set;
+
 /**
  * Device-level interface for immutable resource creation.
  */
@@ -26,11 +30,60 @@ public interface GpuDevice {
 
     record SamplerDescriptor(String label) {}
 
-    record ShaderModuleDescriptor(byte[] code, String label) {}
+    record ShaderModuleDescriptor(byte[] code, String label, String resourceId) {
+        public ShaderModuleDescriptor(byte[] code, String label) {
+            this(code, label, null);
+        }
 
-    record PipelineLayoutDescriptor(String label) {}
+        public static ShaderModuleDescriptor fromSpirvResource(String resourceId, String label) {
+            return new ShaderModuleDescriptor(null, label, resourceId);
+        }
+    }
 
-    record PipelineDescriptor(String label) {}
+    enum ShaderStage {
+        VERTEX,
+        FRAGMENT,
+        COMPUTE
+    }
+
+    enum DescriptorType {
+        UNIFORM_BUFFER,
+        STORAGE_BUFFER,
+        SAMPLED_IMAGE,
+        STORAGE_IMAGE,
+        SAMPLER
+    }
+
+    record DescriptorBinding(int binding, DescriptorType type, int count, Set<ShaderStage> stages) {
+        public DescriptorBinding {
+            Objects.requireNonNull(type, "type");
+            Objects.requireNonNull(stages, "stages");
+        }
+    }
+
+    record ShaderStageDescriptor(GpuShaderModule module, ShaderStage stage, String entryPoint) {
+        public ShaderStageDescriptor {
+            Objects.requireNonNull(module, "module");
+            Objects.requireNonNull(stage, "stage");
+            Objects.requireNonNull(entryPoint, "entryPoint");
+        }
+    }
+
+    record PipelineLayoutDescriptor(List<DescriptorBinding> bindings, String label) {
+        public PipelineLayoutDescriptor(String label) {
+            this(List.of(), label);
+        }
+    }
+
+    record PipelineDescriptor(GpuPipelineLayout layout, List<ShaderStageDescriptor> stages, String label) {
+        public PipelineDescriptor(GpuPipelineLayout layout, List<ShaderStageDescriptor> stages) {
+            this(layout, stages, null);
+        }
+
+        public PipelineDescriptor(String label) {
+            this(null, List.of(), label);
+        }
+    }
 
     record QueryPoolDescriptor(int queryCount, String label) {}
 
