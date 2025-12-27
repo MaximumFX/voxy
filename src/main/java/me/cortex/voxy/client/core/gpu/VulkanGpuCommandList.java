@@ -207,6 +207,7 @@ final class VulkanGpuCommandList implements GpuCommandList {
     private static final class VulkanCommandContext {
         private boolean renderPassActive;
         private GpuPipeline pipeline;
+        private final List<VulkanPipelineBarrier> pipelineBarriers = new ArrayList<>();
 
         void beginRenderPass(int framebufferId) {
             this.renderPassActive = true;
@@ -239,9 +240,11 @@ final class VulkanGpuCommandList implements GpuCommandList {
         }
 
         void bufferBarrier(int barriers) {
+            this.pipelineBarriers.add(VulkanPipelineBarrier.fromGlBarrierBits(barriers));
         }
 
         void imageBarrier(int barriers) {
+            this.pipelineBarriers.add(VulkanPipelineBarrier.fromGlBarrierBits(barriers));
         }
 
         void setUniformMatrix4fv(int location, int count, boolean transpose, long value) {
