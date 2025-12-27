@@ -93,6 +93,125 @@ processResources {
     }
 }
 
+def shaderAssetsRoot = file("src/main/resources/assets")
+def shaderSourceDir = file("src/main/resources/assets/voxy/shaders")
+def spirvOutputDir = layout.buildDirectory.dir("generated/resources/spirv")
+def spirvShaderExtensions = ["vert", "frag", "comp", "vsh", "fsh", "geom", "tesc", "tese"]
+
+def shaderSourceFiles = fileTree(shaderSourceDir) {
+    include spirvShaderExtensions.collect { "**/*.${it}" }
+}
+
+ext.resolveShaderImport = { String importId ->
+    def parts = importId.split(":", 2)
+    if (parts.length != 2) {
+        throw new GradleException("Invalid shader import id: ${importId}")
+    }
+    return new File(shaderAssetsRoot, "${parts[0]}/shaders/${parts[1]}")
+}
+
+ext.preprocessShader = { File source, Map<File, String> cache, List<File> stack ->
+    if (cache.containsKey(source)) {
+        return cache.get(source)
+    }
+    if (stack.contains(source)) {
+        throw new GradleException("Cyclic shader import detected: ${stack} -> ${source}")
+    }
+    stack.add(source)
+    def processed = source.readLines().collect { line ->
+        def matcher = (line =~ /^\s*#import\s+<([^>]+)>\s*$/)
+        if (matcher.matches()) {
+            def importFile = resolveShaderImport.call(matcher[0][1])
+            if (!importFile.exists()) {
+                throw new GradleException("Missing shader import: ${matcher[0][1]} (${importFile})")
+            }
+            return preprocessShader.call(importFile, cache, stack)
+        }
+        return line
+    }.join("\n")
+    stack.remove(source)
+    cache.put(source, processed)
+    return processed
+}
+
+def findSpirvCompiler = {
+    def configured = providers.gradleProperty("spirvCompiler").orNull
+    if (configured != null) {
+        return configured
+    }
+    def envConfigured = System.getenv("SPIRV_COMPILER")
+    if (envConfigured != null) {
+        return envConfigured
+    }
+    def tools = ["glslangValidator", "glslc"]
+    for (tool in tools) {
+        def result = providers.exec {
+            commandLine "bash", "-c", "command -v ${tool}"
+            ignoreExitValue = true
+        }
+        if (result.getResult().get().getExitValue() == 0) {
+            return tool
+        }
+    }
+    return null
+}
+
+tasks.register("compileSpirvShaders") {
+    inputs.dir(shaderSourceDir)
+    outputs.dir(spirvOutputDir)
+
+    doLast {
+        if (!shaderSourceDir.exists()) {
+            return
+        }
+        def compiler = findSpirvCompiler()
+        if (compiler == null) {
+            logger.warn("No SPIR-V compiler found. Set -PspirvCompiler or SPIRV_COMPILER to glslangValidator/glslc to enable SPIR-V shader compilation.")
+            return
+        }
+        def isGlslang = compiler.contains("glslangValidator")
+        def cache = [:]
+        shaderSourceFiles.each { File shaderFile ->
+            def relativePath = shaderSourceDir.toPath().relativize(shaderFile.toPath()).toString()
+            def outputFile = new File(spirvOutputDir.get().asFile, "assets/voxy/shaders/${relativePath}.spv")
+            outputFile.parentFile.mkdirs()
+
+            def stage = null
+            if (shaderFile.name.endsWith(".vsh")) {
+                stage = "vert"
+            } else if (shaderFile.name.endsWith(".fsh")) {
+                stage = "frag"
+            }
+
+            def preprocessed = preprocessShader.call(shaderFile, cache, [])
+            def tempFile = new File(temporaryDir, relativePath.replace(File.separator, "_") + ".glsl")
+            tempFile.text = preprocessed
+
+            def args = []
+            if (isGlslang) {
+                args.addAll(["-V", tempFile.absolutePath, "-o", outputFile.absolutePath])
+                if (stage != null) {
+                    args.addAll(["-S", stage])
+                }
+            } else {
+                args.addAll(["-o", outputFile.absolutePath, tempFile.absolutePath])
+                if (stage != null) {
+                    args.add("-fshader-stage=${stage}")
+                }
+            }
+
+            providers.exec {
+                commandLine([compiler] + args)
+            }
+        }
+    }
+}
+
+processResources {
+    dependsOn tasks.named("compileSpirvShaders")
+    from(spirvOutputDir)
+}
+
 loom {
     accessWidenerPath = file("src/main/resources/voxy.accesswidener")
 }
