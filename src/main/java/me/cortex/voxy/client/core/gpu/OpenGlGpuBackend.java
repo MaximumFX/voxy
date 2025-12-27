@@ -60,6 +60,11 @@ final class OpenGlGpuBackend implements GpuBackend {
         }
     }
 
+    @Override
+    public BackendType backendType() {
+        return BackendType.OPENGL;
+    }
+
     private static final class OpenGlGpuDevice implements GpuDevice {
         @Override
         public GpuBuffer createBuffer(BufferDescriptor descriptor) {

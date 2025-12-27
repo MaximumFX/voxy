@@ -29,4 +29,9 @@ final class VulkanGpuBackend implements GpuBackend {
         VulkanGpuFence vulkanFence = (VulkanGpuFence) fence;
         this.queue.submit(vulkanCommandList, vulkanFence);
     }
+
+    @Override
+    public BackendType backendType() {
+        return BackendType.VULKAN;
+    }
 }

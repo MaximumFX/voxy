@@ -5,9 +5,16 @@ package me.cortex.voxy.client.core.gpu;
  * while per-frame command recording is handled by {@link GpuCommandList}.
  */
 public interface GpuBackend {
+    enum BackendType {
+        OPENGL,
+        VULKAN
+    }
+
     GpuDevice device();
 
     GpuCommandList createCommandList();
 
     void submit(GpuCommandList commandList, GpuFence fence);
+
+    BackendType backendType();
 }
