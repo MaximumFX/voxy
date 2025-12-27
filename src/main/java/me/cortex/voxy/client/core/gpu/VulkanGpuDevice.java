@@ -1,6 +1,12 @@
 package me.cortex.voxy.client.core.gpu;
 
 final class VulkanGpuDevice implements GpuDevice {
+    private final VulkanGpuQueue queue;
+
+    VulkanGpuDevice(VulkanGpuQueue queue) {
+        this.queue = queue;
+    }
+
     @Override
     public GpuBuffer createBuffer(BufferDescriptor descriptor) {
         return VulkanGpuBuffer.unmapped(descriptor);

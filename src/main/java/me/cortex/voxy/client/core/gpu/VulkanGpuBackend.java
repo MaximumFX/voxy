@@ -1,7 +1,7 @@
 package me.cortex.voxy.client.core.gpu;
 
 final class VulkanGpuBackend implements GpuBackend {
-    private final VulkanGpuDevice device = new VulkanGpuDevice();
+    private final VulkanGpuDevice device = new VulkanGpuDevice(this.queue);
     private final VulkanGpuQueue queue = new VulkanGpuQueue();
 
     static boolean isSupported() {
